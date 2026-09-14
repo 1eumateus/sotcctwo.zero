@@ -53,19 +53,32 @@ export default {
     this.$nextTick(() => this.loadPDF(this.pdfUrl));
     window.addEventListener("resize", this.handleResize);
   },
-  beforeDestroy() {
+  beforeUnmount() {
     this.isMounted = false;
     window.removeEventListener("resize", this.handleResize);
-    if (this.pdfDoc) this.pdfDoc.destroy();
+    if (this.zoomTimer) clearTimeout(this.zoomTimer);
+    if (this.resizeTimer) clearTimeout(this.resizeTimer);
+    // ponytail: uma exceção aqui (destroy() falhando) travava o unmount do
+    // componente inteiro no meio do caminho - o "voltar" ficava clicando em
+    // uma tela que o Vue nunca terminava de trocar. É só limpeza, não pode
+    // derrubar a troca de tela se der errado.
+    try {
+      this.pdfDoc?.destroy?.();
+    } catch (err) {
+      console.error("Erro ao destruir o documento PDF:", err);
+    }
   },
   watch: {
     pdfUrl(newUrl) {
       if (newUrl && this.isMounted) this.loadPDF(newUrl);
     },
     zoomLevel(newZoom, oldZoom) {
-      if (this.pdfDoc && this.isMounted && newZoom !== oldZoom) {
-        this.rerenderAllPages();
-      }
+      if (!this.pdfDoc || !this.isMounted || newZoom === oldZoom) return;
+      // ponytail: o slider de zoom dispara "input" a cada tick do arraste -
+      // sem debounce, cada tick re-renderiza todas as páginas em canvas e
+      // trava a UI enquanto a pessoa arrasta.
+      if (this.zoomTimer) clearTimeout(this.zoomTimer);
+      this.zoomTimer = setTimeout(() => this.rerenderAllPages(), 150);
     },
   },
   methods: {
@@ -107,11 +120,13 @@ export default {
     },
 
     async renderPage(page, index) {
+      if (!this.isMounted) return;
       const canvas = document.getElementById(`canvas-${index}`);
       const container = this.$refs.containerRef;
 
       if (!canvas || !container) {
         await new Promise((resolve) => setTimeout(resolve, 50));
+        if (!this.isMounted) return;
         return this.renderPage(page, index);
       }
 

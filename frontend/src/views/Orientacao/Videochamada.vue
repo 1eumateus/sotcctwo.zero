@@ -3,7 +3,7 @@
         <main class="w-full h-full md:w-[90vw] md:h-[85vh] md:rounded-md bg-white flex flex-col overflow-hidden">
             <div class="flex items-center justify-between border-b border-gray-300 p-[14px]">
                 <Texto as="h3">
-                    Videochamada
+                    {{ modo === 'reuniao' ? 'Reunião' : 'Videochamada' }}
                 </Texto>
                 <button type="button" :onClick="fechar" class="cursor-pointer">
                     <PhX :size="18" class="fill-gray-700 hover:fill-black" />
@@ -66,6 +66,10 @@ const props = defineProps({
         type: Boolean,
         default: false,
     },
+    modo: {
+        type: String,
+        default: 'defesa', // 'defesa' (sala fixa, atrelada ao cartaz) | 'reuniao' (sala nova a cada criação)
+    },
 });
 
 const emits = defineEmits(['modal:open']);
@@ -74,11 +78,19 @@ const carregando = ref(true);
 const erro = ref('');
 const jaas = reactive({ token: '', roomName: '', appId: '' });
 
+function rotaEntrar() {
+    if (props.modo !== 'reuniao') return `/orientacao/${props.orientacaoId}/videochamada/token`;
+    // reunião: o professor sempre cria uma sala nova, o aluno só entra na que já está ativa.
+    return props.ehProfessor
+        ? `/orientacao/${props.orientacaoId}/reuniao/criar`
+        : `/orientacao/${props.orientacaoId}/reuniao/entrar`;
+}
+
 async function buscarToken() {
     carregando.value = true;
     erro.value = '';
     jaas.token = '';
-    await api.post(`/orientacao/${props.orientacaoId}/videochamada/token`)
+    await api.post(rotaEntrar())
         .then((res) => {
             jaas.token = res.data.token;
             jaas.roomName = res.data.roomName;
@@ -92,7 +104,10 @@ async function buscarToken() {
 
 async function fechar() {
     if (props.ehProfessor) {
-        await api.put(`/orientacao/${props.orientacaoId}/videochamada/encerrar`).catch(() => {});
+        const rotaEncerrar = props.modo === 'reuniao'
+            ? `/orientacao/${props.orientacaoId}/reuniao/encerrar`
+            : `/orientacao/${props.orientacaoId}/videochamada/encerrar`;
+        await api.put(rotaEncerrar).catch(() => {});
     }
     emits('modal:open', false);
 }

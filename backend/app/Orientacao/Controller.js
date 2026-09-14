@@ -4,6 +4,28 @@ import mongoose from "mongoose";
 const { ObjectId } = mongoose.Types;
 import { sendEmail } from '../shared/Mailer.js';
 
+// clicar no sino marca toda a ATIVIDADE (arquivo/comentário/prazo/etc) como
+// vista de uma vez - solicitação e cancelamento pendentes continuam contando
+// (não são "lidas", precisam de ação de verdade, não só abrir o sino).
+async function marcarNotificacoesVistas (req, res) {
+    try {
+        const token = req.headers.authorization;
+        const {userID, userTipo } = jwt.verify (token, process.env.JWT_SECRET, (err, usuario) => {
+            if (err) return false;
+            return {userID: usuario._id, userTipo: usuario.tipo};
+        });
+        if (!userID) return res.status (400);
+        const campo = userTipo === 'aluno' ? 'ultimaVisualizacaoAluno' : 'ultimaVisualizacaoProfessor';
+        const filtro = { ativo: true };
+        filtro [userTipo] = new ObjectId (String (userID));
+        await Model.updateMany (filtro, { $set: { [campo]: new Date () } });
+        res.status (200).json ({});
+    } catch (error) {
+        console.log (error);
+        return res.status (400).json ({});
+    }
+}
+
 async function listar (req, res) {
     try {
         const token = req.headers.authorization;
@@ -277,6 +299,9 @@ async function editar (req, res) {
         editar.link = req.body.link;
         editar.presencial = req.body.presencial;
         editar.local = req.body.local;
+        // uma via só: nunca desliga de novo, mesmo que "editar" seja chamado
+        // sem esse campo (ex.: "Salvar alterações" do cartaz não manda ele).
+        if (req.body.cartazGerado) editar.cartazGerado = true;
         await editar.save ();
         res.status (200).json ({ msg: "Orientação editada com sucesso." });
     } catch (error) {
@@ -505,4 +530,4 @@ async function listarPublicas (req, res) {
     }
 }
 
-export { listar, criar, deletar, alterarSituacao, editar, pegarPorId, orientacaoPorProfessor, listarPublicas, concluirOrientacao, historico };
+export { listar, criar, deletar, alterarSituacao, editar, pegarPorId, orientacaoPorProfessor, listarPublicas, concluirOrientacao, historico, marcarNotificacoesVistas };

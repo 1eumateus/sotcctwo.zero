@@ -35,9 +35,24 @@
                 </template>
                 <template #body>
                     <div class="relative">
-                        <div class="absolute z-40 top-4 right-0 w-[280px] max-h-[70vh] overflow-y-auto bg-principal rounded-md border border-terciaria flex flex-col text-left">
-                            <div class="px-[14px] py-[8px] border-b border-terciaria">
+                        <!--
+                          ponytail: abaixo de sm, "right-0" era relativo ao próprio
+                          sininho (não à tela) - como ele não fica na borda direita
+                          de verdade (o menu do usuário fica depois dele), o painel
+                          de 280px vazava pra fora da tela à esquerda em celular.
+                          Fixo na viewport + largura por vw resolve nas duas pontas.
+                        -->
+                        <div class="fixed sm:absolute z-40 top-16 sm:top-4 left-2 right-2 sm:left-auto sm:right-0 sm:w-[280px] max-h-[70vh] overflow-y-auto bg-principal rounded-md border border-terciaria flex flex-col text-left">
+                            <div class="flex items-center justify-between gap-[8px] px-[14px] py-[8px] border-b border-terciaria">
                                 Notificações
+                                <button
+                                    v-if="naoLidasCount > 0"
+                                    type="button"
+                                    class="cursor-pointer text-[11px] font-bold text-terciaria hover:underline"
+                                    @click="marcarTodasNotificacoesVistas"
+                                >
+                                    Marcar todas como lidas
+                                </button>
                             </div>
                             <router-link
                                 v-for="item in orientacoesComNotificacao"
@@ -45,6 +60,7 @@
                                 :to="item.solicitacaoPendente ? '/ui/' : `/ui/acompanhamento/${item._id}`"
                                 class="cursor-pointer flex items-center gap-[10px] px-[14px] py-[10px] w-full transition-colors border-l-[3px]"
                                 :class="ehNaoLida(item) ? 'bg-terciaria/10 border-terciaria hover:bg-terciaria/20' : 'border-transparent hover:bg-principal-opaco'"
+                                @click="marcarItemComoLido(item)"
                             >
                                 <div class="cursor-pointer relative flex-shrink-0">
                                     <img
@@ -64,10 +80,20 @@
                                     </span>
                                 </div>
                                 <div class="cursor-pointer flex flex-col gap-[2px] min-w-0 flex-1">
-                                    <Texto :as="ehNaoLida(item) ? 'body-bold' : 'body'" :color="ehNaoLida(item) ? 'white' : 'gray'" :cursorPointer="true">
+                                    <Texto
+                                        :as="ehNaoLida(item) ? 'body-bold' : 'body'"
+                                        :color="ehNaoLida(item) ? 'white' : 'gray'"
+                                        :class="!ehNaoLida(item) ? '!text-gray-400' : ''"
+                                        :cursorPointer="true"
+                                    >
                                         {{ user.tipo === 'aluno' ? nomeCompleto(item.professor) : nomeCompleto(item.aluno) }}
                                     </Texto>
-                                    <Texto as="label" :color="ehNaoLida(item) ? 'white' : 'gray'" :cursorPointer="true">
+                                    <Texto
+                                        as="label"
+                                        :color="ehNaoLida(item) ? 'white' : 'gray'"
+                                        :class="!ehNaoLida(item) ? '!text-gray-400' : ''"
+                                        :cursorPointer="true"
+                                    >
                                         <template v-if="item.solicitacaoPendente">
                                             Nova solicitação de orientação{{ item.proposta ? `: "${item.proposta}"` : '' }}
                                         </template>
@@ -220,6 +246,9 @@ async function buscarNotificacoes() {
     await api.get('/orientacao/')
         .then((res) => {
             const itens = res.data?.item || [];
+            // a mensagem fica na lista pra sempre (é um histórico) - lida ou
+            // não só muda o estilo (apagado x negrito). O que precisa sumir ao
+            // clicar no sino é só o número/contador, não o item da lista.
             const comAtividade = itens.filter((item) => item.situacao === 'confirmado' && item.notificacaoDetalhe);
             const pendentes = props.user.tipo === 'professor'
                 ? itens.filter((item) => item.situacao === 'pendente').map((item) => ({ ...item, solicitacaoPendente: true }))
@@ -240,12 +269,31 @@ async function buscarNotificacoes() {
         .catch(() => {});
 }
 
+// chamado pelo botão "Marcar todas como lidas" - solicitação/cancelamento
+// pendente continuam contando, porque aquilo precisa de ação de verdade.
+async function marcarTodasNotificacoesVistas() {
+    if (props.user.tipo === 'admin' || naoLidasCount.value === 0) return;
+    await api.put('/orientacao/marcarNotificacoesVistas').catch(() => {});
+    await buscarNotificacoes();
+    // avisa quem mais escuta esse evento (ex.: o sininho de cada aluno na
+    // Home) que a leitura mudou - senão só o painel do sino atualiza.
+    window.dispatchEvent(new Event('sotcc:notificacao-vista'));
+}
+
+// clicar num item já leva pra tela dele, que marca como vista de verdade
+// (Acompanhamento.vue chama /visualizar sozinho ao abrir) - isso aqui só
+// atualiza o item na hora, pra não ficar em destaque até o próximo poll.
+function marcarItemComoLido(item) {
+    if (item.solicitacaoPendente || item.cancelamentoPendente) return;
+    item.notificacaoLida = true;
+}
+
 watch(() => route.fullPath, buscarNotificacoes);
 
 // ponytail: visualizar uma orientação marca ela como lida no servidor, mas
 // esse componente não sabe quando isso terminou (rota já muda antes do PUT
 // responder). Escuta o evento pra tirar o ponto vermelho na hora, sem F5;
-// o poll é só uma rede de segurança pra atividade nova de quem não navegou.
+// o poll de 20s cobre a atividade nova de quem não navegou.
 let pollInterval = null;
 onMounted(() => {
     buscarNotificacoes();

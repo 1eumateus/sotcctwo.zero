@@ -35,6 +35,15 @@ function popupInfo() {
     },
   };
 }
+
+// toast + notificação nativa do navegador (se autorizada) - usado em toda
+// tela que precisa avisar de algo sem a pessoa precisar recarregar a página.
+export function notificarNavegador(titulo, texto) {
+  popupInfo().info(texto);
+  if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+    new Notification(titulo, { body: texto });
+  }
+}
 export const isValid = {
   email(email) {
     const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

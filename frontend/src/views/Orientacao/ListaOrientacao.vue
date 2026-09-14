@@ -474,18 +474,17 @@ async function toggleHistorico () {
     }
 }
 
-// clique nos cards "solicitações"/"pendentes"/"concluídas" da Home pilota essa tela por fora.
+// clique nos cards "solicitações"/"pendentes"/"concluídas"/"em dia"/"atrasados"
+// da Home pilota essa tela por fora. mostrarHistorico deriva sempre do valor
+// atual (nunca fica "preso" de um clique anterior) - só 'concluido' mostra
+// histórico, qualquer outro valor (inclusive null, do "em dia"/"atrasados"
+// do professor) volta pra visão normal.
 watch (() => props.filtroExterno, async (valor) => {
-    if (valor === 'concluido') {
-        mostrarHistorico.value = true;
-        if (historicoItens.length === 0) await listarHistorico ();
-    } else if (valor === 'todas') {
-        // fica na visão de cards (não na de histórico) mas precisa dos dados
-        // do histórico pra juntar com as ativas.
-        mostrarHistorico.value = false;
-        if (historicoItens.length === 0) await listarHistorico ();
-    } else if (valor === 'confirmado') {
-        mostrarHistorico.value = false;
+    mostrarHistorico.value = valor === 'concluido';
+    // 'todas' junta ativas + histórico (menos concluídas) na mesma lista,
+    // então precisa dos dados do histórico mesmo sem mostrar a aba dele.
+    if ((valor === 'concluido' || valor === 'todas') && historicoItens.length === 0) {
+        await listarHistorico ();
     }
 }, { immediate: true });
 
@@ -500,7 +499,9 @@ async function responderOrientacao (orientacaoParaNegar, novaSituacao) {
     Object.assign (orientacao, orientacaoParaNegar)
 }
 
-onMounted (listarOrientacao);
+onMounted (async () => {
+    await listarOrientacao ();
+});
 
 defineExpose ({ listarOrientacao });
 </script>

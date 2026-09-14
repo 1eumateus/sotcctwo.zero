@@ -124,12 +124,42 @@ const modelSchema = new Schema ({
         default: null,
         required: false,
     },
+    // sala da defesa - fixa, atrelada ao cartaz (link público). Nunca muda de id.
     chamadaAoVivo: {
         ativa: {
             type: Boolean,
             default: false,
         },
         iniciadaEm: {
+            type: Date,
+            default: null,
+        },
+    },
+    // true assim que o cartaz é gerado pela 1ª vez - a partir daí o botão de
+    // reunião vira "Sala de defesa" e passa a usar a sala fixa (chamadaAoVivo),
+    // nunca mais a sala avulsa - o link do cartaz não pode ficar obsoleto.
+    cartazGerado: {
+        type: Boolean,
+        default: false,
+    },
+    // sala de reunião avulsa do orientador com o aluno - o professor gera uma
+    // sala nova (salaId novo) toda vez que clica em "Criar reunião".
+    reuniao: {
+        salaId: {
+            type: String,
+            default: null,
+        },
+        ativa: {
+            type: Boolean,
+            default: false,
+        },
+        iniciadaEm: {
+            type: Date,
+            default: null,
+        },
+        // quando setado (e ativa ainda false), é uma reunião marcada pra
+        // depois - um job liga "ativa" sozinho na hora certa (ReuniaoAgendada.js).
+        agendadaPara: {
             type: Date,
             default: null,
         },

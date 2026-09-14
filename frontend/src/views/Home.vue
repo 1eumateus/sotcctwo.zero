@@ -227,6 +227,7 @@
 
             <div class="home-main flex flex-col gap-[24px]">
                 <ListaOrientacao
+                    v-if="!(props?.usuario?.tipo === 'professor' && filtroStatus)"
                     ref="listaOrientacaoRef"
                     :usuario="props?.usuario"
                     :filtro-externo="filtroHistorico"
@@ -281,7 +282,10 @@
                     </div>
                 </section>
 
-                <section v-if="!verHistorico && props?.usuario?.tipo === 'professor'" class="grid grid-cols-1 gap-[10px] border border-secundaria-opaco rounded-md bg-white p-[14px]">
+                <section
+                    v-if="!verHistorico && props?.usuario?.tipo === 'professor'"
+                    :class="['grid grid-cols-1 gap-[10px] border border-secundaria-opaco rounded-md bg-white p-[14px]', filtroStatus ? 'order-first' : '']"
+                >
                     <div class="flex items-center justify-between flex-wrap gap-[8px] border-b border-secundaria-opaco pb-[8px]">
                         <div class="flex items-center gap-[8px]">
                             <PhUsersThree :size="22" class="fill-principal" />
@@ -502,7 +506,7 @@
 </template>
 <script setup>
 import { PhInfo, PhRocketLaunch, PhChartLineUp, PhBell, PhWarning, PhUsersThree, PhGraduationCap, PhChalkboardTeacher, PhLightbulb, PhClock, PhCalendarBlank, PhVideoCamera } from '@phosphor-icons/vue';
-import { computed, onMounted, ref, reactive } from "vue";
+import { computed, onMounted, onUnmounted, ref, reactive } from "vue";
 import api from "@/api.js";
 import { popupInfo, formatMask } from '../stores/util.js';
 import Texto from '@components/Texto.vue'
@@ -559,6 +563,11 @@ function toggleFiltroHistorico(valor) {
 function toggleFiltroStatus(valor) {
     filtroHistorico.value = null;
     filtroStatus.value = filtroStatus.value === valor ? null : valor;
+    // "em dia"/"atrasados" escondem o ListaOrientacao (ele vira a grade de
+    // alunos no lugar dele) - sem isso, se verHistorico tivesse ficado true
+    // de uma visita anterior a "concluídos", o componente que zeraria esse
+    // estado nem chega a existir, e a grade de alunos também some.
+    verHistorico.value = false;
 }
 
 const saudacao = computed(() => {
@@ -749,6 +758,13 @@ onMounted(async()=>{
     isLoading.changeStateTrue();
     await start();
     isLoading.changeStateFalse();
+    // clicar no sino (Menu.vue) marca tudo como visto e dispara esse evento -
+    // sem isso o sininho de cada aluno aqui embaixo só atualizava sozinho.
+    window.addEventListener('sotcc:notificacao-vista', listarOrientacao);
+});
+
+onUnmounted(() => {
+    window.removeEventListener('sotcc:notificacao-vista', listarOrientacao);
 });
 </script>
 

@@ -15,6 +15,7 @@
     :orientacao-id="orientacao._id"
     :usuario="props.usuario"
     :eh-professor="ehProfessor"
+    :modo="modoVideochamada"
     @modal:open="openVideochamada = $event"
     v-if="openVideochamada"
   />
@@ -36,17 +37,26 @@
             <button
               v-if="!acoesSuspensas && orientacao.situacao === 'confirmado'"
               type="button"
-              :disabled="!ehProfessor && !orientacao.chamadaAoVivo?.ativa"
+              :disabled="!ehProfessor && !salaReuniaoAtiva"
               :class="[
                 'flex items-center gap-[4px] px-[10px] py-[6px] rounded-md font-bold text-[13px]',
-                (ehProfessor || orientacao.chamadaAoVivo?.ativa)
+                (ehProfessor || salaReuniaoAtiva)
                   ? 'cursor-pointer bg-principal hover:bg-principal-opaco text-white'
                   : 'cursor-not-allowed bg-secundaria border border-secundaria-opaco text-gray-400',
               ]"
-              @click="openVideochamada = true"
+              @click="modoVideochamada = orientacao.cartazGerado ? 'defesa' : 'reuniao'; openVideochamada = true"
             >
               <PhVideoCamera :size="16" />
-              Entrar na sala
+              {{ orientacao.cartazGerado ? (ehProfessor ? 'Sala de defesa' : 'Entrar na sala de defesa') : (ehProfessor ? 'Criar reunião' : 'Entrar na reunião') }}
+            </button>
+            <button
+              v-if="ehProfessor && !acoesSuspensas && orientacao.situacao === 'confirmado' && !orientacao.cartazGerado"
+              type="button"
+              class="cursor-pointer flex items-center gap-[4px] px-[10px] py-[6px] border border-principal text-principal hover:bg-secundaria rounded-md font-bold text-[13px]"
+              @click="abrirAgendamentoReuniao"
+            >
+              <PhCalendarPlus :size="16" />
+              {{ orientacao.reuniao?.agendadaPara && !orientacao.reuniao?.ativa ? 'Alterar agendamento' : 'Agendar' }}
             </button>
             <button
               v-if="!somenteLeitura && !cancelamentoAtivo && podeSolicitarCancelamento"
@@ -58,6 +68,40 @@
               {{ ehProfessor ? 'Encerrar orientação' : 'Solicitar cancelamento' }}
             </button>
           </div>
+        </div>
+
+        <div v-if="agendandoReuniao" class="border border-secundaria-opaco rounded-md bg-secundaria p-[12px] flex flex-wrap items-end gap-[10px]">
+          <div class="w-[160px]">
+            <Campo v-model="reuniaoAgendarData" label="Data" id="reuniaoData" type="date" :obrigatorio="true" />
+          </div>
+          <div class="w-[130px]">
+            <Campo v-model="reuniaoAgendarHora" label="Hora" id="reuniaoHora" type="time" :obrigatorio="true" />
+          </div>
+          <button
+            type="button"
+            class="cursor-pointer bg-principal hover:bg-principal-opaco text-white px-[14px] py-[9px] rounded-md font-bold text-[13px]"
+            @click="confirmarAgendamentoReuniao"
+          >
+            Confirmar
+          </button>
+          <button
+            type="button"
+            class="cursor-pointer border border-gray-300 hover:bg-gray-100 px-[14px] py-[9px] rounded-md font-bold text-[13px]"
+            @click="agendandoReuniao = false"
+          >
+            Cancelar
+          </button>
+        </div>
+
+        <div
+          v-if="orientacao.reuniao?.agendadaPara && !orientacao.reuniao?.ativa && !orientacao.cartazGerado"
+          class="border border-terciaria rounded-md bg-terciaria/10 p-[12px] flex items-center gap-[8px]"
+        >
+          <PhCalendarBlank :size="20" class="fill-terciaria-opaco flex-shrink-0" />
+          <Texto as="body" color="gray">
+            {{ ehProfessor ? 'Reunião marcada para' : 'Seu orientador marcou uma reunião para' }}
+            {{ formatMask.viewDataHora(orientacao.reuniao.agendadaPara) }} - a sala libera sozinha nesse horário.
+          </Texto>
         </div>
 
         <div v-if="somenteLeitura" class="border border-secundaria-opaco rounded-md bg-secundaria p-[12px] flex items-center gap-[8px]">
@@ -166,7 +210,7 @@
         </div>
 
         <div
-          v-if="ehProfessor && tccConcluido"
+          v-if="ehProfessor && tccConcluido && !orientacao.cartazGerado"
           class="border border-terciaria rounded-md bg-terciaria/10 p-[12px] flex items-center justify-between flex-wrap gap-[8px]"
         >
           <div class="flex items-center gap-[8px]">
@@ -185,23 +229,32 @@
         </div>
 
         <div
-          v-if="!ehProfessor && !acoesSuspensas && orientacao.dataDefesa && orientacao.situacao === 'confirmado'"
+          v-if="!acoesSuspensas && orientacao.dataDefesa && orientacao.situacao === 'confirmado'"
           class="border border-terciaria rounded-md bg-terciaria/10 p-[12px] flex flex-col gap-[8px]"
         >
           <div class="flex items-center justify-between flex-wrap gap-[8px]">
             <div class="flex items-center gap-[8px]">
               <PhVideoCamera :size="20" class="fill-terciaria-opaco" />
               <Texto as="body-bold" color="principal">
-                {{ ehDiaDaDefesa ? 'Hoje é o dia da sua defesa!' : 'Defesa agendada' }}
+                {{ ehDiaDaDefesa ? `Hoje é o dia d${ehProfessor ? 'a' : 'a sua'} defesa!` : 'Defesa agendada' }}
               </Texto>
             </div>
             <button
-              v-if="ehDiaDaDefesa"
+              v-if="!ehProfessor && ehDiaDaDefesa"
               type="button"
               class="cursor-pointer flex items-center gap-[6px] px-[14px] py-[8px] bg-terciaria hover:bg-terciaria-opaco text-white rounded-md font-bold text-[13px]"
-              @click="openVideochamada = true"
+              @click="modoVideochamada = 'defesa'; openVideochamada = true"
             >
               Entrar na sala
+            </button>
+            <button
+              v-if="ehProfessor && orientacao.cartazGerado"
+              type="button"
+              class="cursor-pointer flex items-center gap-[6px] px-[14px] py-[8px] border border-terciaria text-terciaria-opaco hover:bg-terciaria/20 rounded-md font-bold text-[13px]"
+              @click="openGerarCartaz = true"
+            >
+              <PhPencilSimple :size="14" />
+              Editar dados do cartaz
             </button>
           </div>
           <div class="flex items-center gap-[4px]">
@@ -540,10 +593,12 @@
 
               <template v-if="!acoesSuspensas">
                 <textarea
+                  ref="comentarioTextareaRef"
                   v-model="comentarioTexto[abaSelecionada]"
                   rows="2"
                   placeholder="Escreva um comentário..."
-                  class="w-full border border-principal focus:outline-principal p-[8px] rounded-md text-sm"
+                  class="w-full border border-principal focus:outline-principal p-[8px] rounded-md text-sm resize-none overflow-hidden"
+                  @input="aoDigitarComentario"
                 ></textarea>
                 <div
                   v-if="comentarioAnexo[abaSelecionada]"
@@ -639,11 +694,10 @@
             <PhMagnifyingGlass :size="18" class="fill-gray-600" />
             <input
               type="range"
-              v-model="zoomLevel"
+              v-model.number="zoomLevel"
               min="0.5"
               max="1.5"
               step="0.01"
-              @input="updateZoom"
               class="w-32 h-1 rounded-lg appearance-none cursor-pointer zoom-slider"
               :style="{
                 background: `linear-gradient(to right, #3d4a7b 0%, #3d4a7b ${(zoomLevel - 0.5) * 100}%, #e9e9e9 ${(zoomLevel - 0.5) * 100}%, #e9e9e9 100%)`,
@@ -677,19 +731,21 @@
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, reactive, ref, computed, watch, defineAsyncComponent } from "vue";
+import { onMounted, onUnmounted, nextTick, reactive, ref, computed, watch, defineAsyncComponent } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   PhTrash, PhEye, PhCloudArrowUp, PhFilePdf, PhMagnifyingGlass,
   PhCaretLeft, PhCheck, PhCheckCircle, PhLockSimple, PhLockSimpleOpen, PhX, PhPaperclip, PhPencilSimple, PhFloppyDisk, PhClock, PhVideoCamera,
+  PhCalendarBlank, PhCalendarPlus,
 } from '@phosphor-icons/vue';
 import Texto from '@components/Texto.vue';
+import Campo from '@components/Campo.vue';
 const PdfViewer = defineAsyncComponent(() => import("../../components/pdfViewer.vue"));
 import RespostaOrientacao from './RespostaOrientacao.vue';
 import GerarCartaz from './GerarCartaz.vue';
 import Videochamada from './Videochamada.vue';
 import api from "@/api.js";
-import { popupInfo, formatMask } from '../../stores/util.js';
+import { popupInfo, formatMask, notificarNavegador } from '../../stores/util.js';
 import { useLoaderState } from "../../stores/isLoading.js";
 
 const props = defineProps({
@@ -704,12 +760,23 @@ const router = useRouter();
 const openNegarOrientacao = ref(false);
 const openGerarCartaz = ref(false);
 const openVideochamada = ref(false);
+const modoVideochamada = ref('reuniao'); // 'reuniao' (sala nova por clique) | 'defesa' (sala fixa do cartaz)
+const agendandoReuniao = ref(false);
+const reuniaoAgendarData = ref('');
+const reuniaoAgendarHora = ref('');
 const recusandoCancelamento = ref(false);
 const motivoRecusaCancelamento = ref('');
 const isLoading = useLoaderState();
 const urlApi = import.meta.env.VITE_URL;
 
 const ehProfessor = computed(() => props.usuario?.tipo === 'professor');
+
+// depois do cartaz gerado, o botão de reunião vira "Sala de defesa" e passa a
+// usar a mesma sala fixa da defesa - a sala já é pública (link no cartaz), o
+// aluno não precisa mais esperar o professor "abrir" pra poder entrar.
+const salaReuniaoAtiva = computed(() => (
+  orientacao.cartazGerado ? true : !!orientacao.reuniao?.ativa
+));
 
 const somenteLeitura = computed(() => orientacao.ativo === false);
 
@@ -791,7 +858,33 @@ watch(abaSelecionada, () => {
   descricaoProposta.value = souFaseTema.value ? temaAtual.value : (fase?.descricao || '');
   editandoPrazo.value = false;
   editandoDescricao.value = false;
+  // a caixa de comentário é uma só reaproveitada entre as abas - ao trocar de
+  // aba o texto muda sem disparar "input", então a altura fica do tamanho do
+  // comentário da aba anterior se não recalcular aqui.
+  nextTick(() => redimensionarComentario());
 }, { immediate: true });
+
+const comentarioTextareaRef = ref(null);
+
+function redimensionarComentario() {
+  const el = comentarioTextareaRef.value;
+  if (!el) return;
+  el.style.height = 'auto';
+  el.style.height = `${el.scrollHeight}px`;
+}
+
+// cresce a caixa junto com o texto e desce a tela na mesma medida que ela
+// cresceu, pra quem está digitando não perder a caixa (e o botão "Enviar")
+// de vista conforme o comentário fica mais longo.
+function aoDigitarComentario(event) {
+  const alturaAntes = event.target.offsetHeight;
+  redimensionarComentario();
+  const crescimento = event.target.offsetHeight - alturaAntes;
+  // instantâneo, não 'smooth' - a caixa já cresceu na hora (reflow síncrono),
+  // um scroll suave atrasado faz o conteúdo abaixo "sumir" por um instante
+  // até a rolagem alcançar o tamanho novo.
+  if (crescimento > 0) window.scrollBy({ top: crescimento, behavior: 'auto' });
+}
 
 const selectedFile = ref(null);
 const viewing = ref(false);
@@ -899,7 +992,7 @@ let primeiraCarga = true;
 async function start() {
   isLoading.changeStateTrue();
   await api.get(`/orientacao/${route.params.id}`)
-    .then((res) => {
+    .then(async (res) => {
       Object.assign(orientacao, res.data.orientacao);
       orientacao.dataDefesa = formatMask.date(orientacao.dataDefesa);
       if (!orientacao.coorientador) orientacao.coorientador = { nome: '', instituicao: '' };
@@ -911,7 +1004,10 @@ async function start() {
         abaSelecionada.value = novidade ?? Math.min(faseAtualIndex.value, orientacao.fases.length - 1);
         primeiraCarga = false;
       }
-      api.put(`/orientacao/${orientacao._id}/visualizar`)
+      // ponytail: sem o await aqui, quem navega rápido (ex.: clica e já volta
+      // pra Home) podia sair da página antes desse PUT terminar - o sino do
+      // menu ficava aceso mesmo já tendo "lido", até o poll de 20s alcançar.
+      await api.put(`/orientacao/${orientacao._id}/visualizar`)
         .then(() => window.dispatchEvent(new Event('sotcc:notificacao-vista')))
         .catch(() => {});
     })
@@ -1074,6 +1170,7 @@ async function enviarComentario(faseIndex) {
       popupInfo().success(res.data?.msg);
       comentarioTexto[faseIndex] = '';
       comentarioAnexo[faseIndex] = null;
+      nextTick(() => redimensionarComentario());
       await start();
     })
     .catch((e) => popupInfo().warning(e.response?.data?.msg || 'Erro ao enviar comentário.'))
@@ -1084,23 +1181,21 @@ function viewPdf(arquivo) {
   selectedFile.value = arquivo;
   viewing.value = true;
   zoomLevel.value = 1.0;
+  // a tela do PDF é bem mais curta que a de acompanhamento - se a página
+  // estava rolada pra baixo (ex.: depois de digitar um comentário longo), o
+  // botão "voltar" nasce fora da área visível e parece que não responde.
+  window.scrollTo({ top: 0 });
 }
 
 function closePdfViewer() {
   selectedFile.value = null;
   viewing.value = false;
   zoomLevel.value = 1.0;
-}
-
-function updateZoom() {
-  if (pdfViewerRef.value) {
-    pdfViewerRef.value.updateZoom(zoomLevel.value);
-  }
+  window.scrollTo({ top: 0 });
 }
 
 function resetZoom() {
   zoomLevel.value = 1.0;
-  updateZoom();
 }
 
 async function fecharNegarOrientacao(event) {
@@ -1156,17 +1251,45 @@ async function retirarSolicitacaoCancelamento() {
     .finally(() => isLoading.changeStateFalse());
 }
 
+// reabre o formulário já preenchido com o que está marcado - o professor
+// pode alterar data/hora só sobrescrevendo e confirmando de novo.
+function abrirAgendamentoReuniao() {
+  const agendada = orientacao.reuniao?.agendadaPara;
+  if (agendada && !orientacao.reuniao?.ativa) {
+    const data = new Date(agendada);
+    const ano = data.getFullYear();
+    const mes = String(data.getMonth() + 1).padStart(2, '0');
+    const dia = String(data.getDate()).padStart(2, '0');
+    reuniaoAgendarData.value = `${ano}-${mes}-${dia}`;
+    reuniaoAgendarHora.value = `${String(data.getHours()).padStart(2, '0')}:${String(data.getMinutes()).padStart(2, '0')}`;
+  }
+  agendandoReuniao.value = !agendandoReuniao.value;
+}
+
+async function confirmarAgendamentoReuniao() {
+  if (!reuniaoAgendarData.value || !reuniaoAgendarHora.value) {
+    return popupInfo().warning('Informe data e hora da reunião.');
+  }
+  isLoading.changeStateTrue();
+  await api.post(`/orientacao/${orientacao._id}/reuniao/agendar`, {
+    data: reuniaoAgendarData.value,
+    hora: reuniaoAgendarHora.value,
+  })
+    .then(async (res) => {
+      popupInfo().success(res.data?.msg);
+      agendandoReuniao.value = false;
+      reuniaoAgendarData.value = '';
+      reuniaoAgendarHora.value = '';
+      await start();
+    })
+    .catch((e) => popupInfo().warning(e.response?.data?.msg || e))
+    .finally(() => isLoading.changeStateFalse());
+}
+
 // ponytail: sem infra de push (service worker/VAPID); polling + Notification API
 // avisa quem está com a página aberta. Se precisar avisar com o app
 // fechado, aí sim vale montar push de verdade.
 let pollInterval = null;
-
-function notificarNavegador(titulo, texto) {
-  popupInfo().info(texto);
-  if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-    new Notification(titulo, { body: texto });
-  }
-}
 
 function notificarNovoPrazo(fase, prazoAntigo, prazoNovo) {
   if (String(prazoAntigo || '') === String(prazoNovo || '')) return;
@@ -1201,9 +1324,25 @@ function notificarRespostaCancelamento(resposta) {
   notificarNavegador('SOTCC - Resposta ao cancelamento', texto);
 }
 
+// depois do cartaz a sala já está sempre liberada pro aluno (não tem mais um
+// "iniciar" pra notificar) - só a reunião avulsa (antes do cartaz) tem esse
+// evento de verdade.
+function salaAtivaDe(dados) {
+  return dados.cartazGerado ? true : !!dados.reuniao?.ativa;
+}
+
+function notificarChamadaIniciada(cartazGerado) {
+  const texto = cartazGerado
+    ? 'O orientador abriu a sala de defesa. Você já pode entrar.'
+    : 'O orientador criou uma reunião. Você já pode entrar.';
+  notificarNavegador('SOTCC - Reunião', texto);
+}
+
 async function verificarMudancasFase() {
   const meuAutor = ehProfessor.value ? 'professor' : 'aluno';
   const tinhaRespostaCancelamento = !!orientacao.cancelamento?.resposta?.data;
+  const salaAtivaAntes = salaAtivaDe(orientacao);
+  const agendadaParaAntes = orientacao.reuniao?.agendadaPara || null;
   const antes = orientacao.fases.map((fase) => ({
     prazo: fase.prazo,
     descricao: fase.descricao,
@@ -1216,6 +1355,21 @@ async function verificarMudancasFase() {
       const novaResposta = res.data.orientacao.cancelamento?.resposta;
       if (novaResposta?.data && !tinhaRespostaCancelamento && orientacao.cancelamento?.solicitadoPor === (ehProfessor.value ? 'professor' : 'aluno')) {
         notificarRespostaCancelamento(novaResposta);
+      }
+      const salaAtivaDepois = salaAtivaDe(res.data.orientacao);
+      if (!ehProfessor.value && !salaAtivaAntes && salaAtivaDepois) {
+        notificarChamadaIniciada(res.data.orientacao.cartazGerado);
+      }
+      const agendadaParaDepois = res.data.orientacao.reuniao?.agendadaPara || null;
+      if (!ehProfessor.value && !res.data.orientacao.reuniao?.ativa && agendadaParaDepois && agendadaParaDepois !== agendadaParaAntes) {
+        notificarNavegador('SOTCC - Reunião marcada', `O orientador marcou uma reunião para ${formatMask.viewDataHora(agendadaParaDepois)}.`);
+      }
+      if (!ehProfessor.value && salaAtivaAntes && !salaAtivaDepois && openVideochamada.value) {
+        // ponytail: se o professor encerra pelo próprio Jitsi (sem passar
+        // pelo botão "fechar" do modal), o aluno fica preso numa sala morta
+        // até o próximo poll - fecha o modal dele junto.
+        openVideochamada.value = false;
+        notificarNavegador('SOTCC - Reunião', 'O orientador encerrou a sala.');
       }
       const fasesNovas = res.data.orientacao.fases || [];
       fasesNovas.forEach((fase, index) => {

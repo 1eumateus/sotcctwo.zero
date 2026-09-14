@@ -1,16 +1,16 @@
 import express from "express";
-import { listar, pegarPorId, alterarSituacao, criar, deletar, editar, orientacaoPorProfessor, listarPublicas, concluirOrientacao, historico } from "./Controller.js";
+import { listar, pegarPorId, alterarSituacao, criar, deletar, editar, orientacaoPorProfessor, listarPublicas, concluirOrientacao, historico, marcarNotificacoesVistas } from "./Controller.js";
 import { visualizarFases, enviarArquivoFase, removerArquivoFase, comentarFase, removerComentarioFase, editarComentarioFase, avaliarFase, definirPrazoFase, definirDescricaoFase } from "./FasesController.js";
 import { solicitarCancelamento, responderCancelamento, retirarCancelamento } from "./CancelamentoController.js";
 import { gerarConvite } from "./ConviteController.js";
-import { gerarTokenVideochamada, encerrarVideochamada, gerarTokenVideochamadaPublico } from "./VideochamadaController.js";
+import { gerarTokenVideochamada, encerrarVideochamada, gerarTokenVideochamadaPublico, criarReuniao, entrarReuniao, agendarReuniao, encerrarReuniao } from "./VideochamadaController.js";
 import { makeUpload } from "../shared/Multer.js";
 
 const router = express.Router ();
 
 const uploadFase = makeUpload ({
     randomizeFilename: true,
-    limits: { fileSize: 20 * 1024 * 1024 }, // 20MB
+    limits: { fileSize: 30 * 1024 * 1024 }, // 30MB
     fileFilter: function (req, file, cb) {
         if (file.mimetype === 'application/pdf') {
             cb (null, true);
@@ -27,6 +27,7 @@ router.post ("/gerarConvite", gerarConvite);
 router.get ("/professor/:id", orientacaoPorProfessor);
 router.get ("/publicas", listarPublicas);
 router.get ("/historico", historico);
+router.put ("/marcarNotificacoesVistas", marcarNotificacoesVistas);
 router.put ("/:id/visualizar", visualizarFases);
 router.post ("/:id/solicitarCancelamento", solicitarCancelamento);
 router.put ("/:id/responderCancelamento", responderCancelamento);
@@ -43,6 +44,10 @@ router.put ("/:id/fases/:faseIndex/descricao", definirDescricaoFase);
 router.post ("/:id/videochamada/token", gerarTokenVideochamada);
 router.put ("/:id/videochamada/encerrar", encerrarVideochamada);
 router.post ("/:id/videochamada/token/publico", gerarTokenVideochamadaPublico);
+router.post ("/:id/reuniao/criar", criarReuniao);
+router.post ("/:id/reuniao/entrar", entrarReuniao);
+router.post ("/:id/reuniao/agendar", agendarReuniao);
+router.put ("/:id/reuniao/encerrar", encerrarReuniao);
 router.get ("/:id", pegarPorId);
 router.delete ("/:id", deletar);
 router.get ("/", listar);

@@ -14,10 +14,22 @@
                 </button>
             </div>
 
+            <div class="border border-secundaria-opaco rounded-md bg-secundaria p-[12px] flex flex-col gap-[2px]">
+                <Texto as="label" color="gray">Aluno</Texto>
+                <Texto as="body-bold">{{ form.aluno?.nome }} {{ form.aluno?.sobrenome }}</Texto>
+            </div>
+
             <div class="border border-secundaria-opaco rounded-md bg-secundaria p-[12px] flex items-center gap-[8px]" v-if="!form.presencial">
                 <PhVideoCamera :size="20" class="fill-principal flex-shrink-0" />
                 <Texto as="body" color="gray">
                     A defesa será transmitida automaticamente pela plataforma quando o orientador iniciar a videochamada — não precisa informar link.
+                </Texto>
+            </div>
+
+            <div class="border border-terciaria/40 rounded-md bg-terciaria/10 p-[10px] flex items-center gap-[8px]" v-if="form.cartazGerado">
+                <PhVideoCamera :size="18" class="fill-terciaria-opaco flex-shrink-0" />
+                <Texto as="small" color="gray">
+                    O cartaz já foi gerado - a sala da defesa ficou fixa e não muda mais, mesmo editando os outros campos.
                 </Texto>
             </div>
 
@@ -297,6 +309,9 @@ async function gerarConvite(){
     }
 
     isLoading.changeStateTrue()
+    // a partir daqui a sala de defesa é definitiva - o botão de reunião do
+    // Acompanhamento vira "Sala de defesa" e para de trocar de sala.
+    props.form.cartazGerado = true;
     // ponytail: gerar o cartaz precisa salvar antes — senão a defesa fica
     // com data/tema atualizados só no PDF, sem aparecer na vitrine pública.
     const salvouAntes = await api.put(`/orientacao/editar`, props.form)

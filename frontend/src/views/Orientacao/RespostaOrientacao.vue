@@ -37,7 +37,7 @@
                         Encerrar orientação
                     </Texto>
                     <Texto as="body" color="gray">
-                        O aluno {{ orientacao.aluno?.nome }} precisa aceitar o cancelamento para a orientação ser encerrada.
+                        A orientação será cancelada imediatamente e o aluno {{ orientacao.aluno?.nome }} será avisado por e-mail.
                     </Texto>
                     <div class="flex items-center gap-[10px]">
                         <Texto as="body" for="motivo">
@@ -105,9 +105,16 @@
                 <button
                     type="button"
                     :onClick="solicitarCancelamento"
-                    v-if="orientacao.situacao === 'confirmado'"
+                    v-if="orientacao.situacao === 'confirmado' && props?.usuario.tipo === 'aluno'"
                     class=" font-bold text-[14px] bg-principal hover:bg-principal-opaco text-white py-[8px] px-[12px] rounded-md cursor-pointer">
                     Solicitar cancelamento
+                </button>
+                <button
+                    type="button"
+                    :onClick="cancelarOrientacao"
+                    v-if="orientacao.situacao === 'confirmado' && props?.usuario.tipo === 'professor'"
+                    class=" font-bold text-[14px] bg-principal hover:bg-principal-opaco text-white py-[8px] px-[12px] rounded-md cursor-pointer">
+                    Cancelar orientação
                 </button>
             </section>
         </main>
@@ -178,6 +185,18 @@ async function solicitarCancelamento(){
         return popupInfo().warning('Justifique o motivo do cancelamento.');
     }
     await api.post(`/orientacao/${props?.orientacao._id}/solicitarCancelamento`, { motivo: form.motivo })
+    .then((res)=>{
+        popupInfo().success(res?.data?.msg);
+    }).catch((e)=>{
+        popupInfo().warning(e?.response?.data?.msg || e);
+    }).finally(()=>emits('modal:open', false))
+}
+
+async function cancelarOrientacao(){
+    if (!form.motivo?.trim()) {
+        return popupInfo().warning('Justifique o motivo do cancelamento.');
+    }
+    await api.post(`/orientacao/${props?.orientacao._id}/cancelar`, { motivo: form.motivo })
     .then((res)=>{
         popupInfo().success(res?.data?.msg);
     }).catch((e)=>{

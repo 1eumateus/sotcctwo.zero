@@ -59,7 +59,7 @@
               {{ orientacao.reuniao?.agendadaPara && !orientacao.reuniao?.ativa ? 'Alterar agendamento' : 'Agendar' }}
             </button>
             <button
-              v-if="!somenteLeitura && !cancelamentoAtivo && podeSolicitarCancelamento"
+              v-if="!somenteLeitura && !cancelamentoAtivo && (ehProfessor || podeSolicitarCancelamento)"
               type="button"
               class="cursor-pointer flex items-center gap-[4px] px-[10px] py-[6px] border border-red-300 text-red-600 hover:bg-red-50 rounded-md font-bold text-[13px]"
               @click="openNegarOrientacao = true"
@@ -121,7 +121,7 @@
                 {{
                   cancelamentoSolicitadoPorMim
                     ? 'Cancelamento solicitado'
-                    : (ehProfessor ? 'O aluno solicitou o cancelamento desta orientação' : 'O orientador solicitou o cancelamento desta orientação')
+                    : 'O aluno solicitou o cancelamento desta orientação'
                 }}
               </Texto>
               <Texto as="body">
@@ -181,7 +181,7 @@
           </div>
 
           <Texto as="label" color="gray" v-if="cancelamentoSolicitadoPorMim">
-            {{ ehProfessor ? 'Aguardando resposta do aluno.' : 'Aguardando resposta do orientador.' }}
+            Aguardando resposta do orientador.
           </Texto>
         </div>
 
@@ -310,6 +310,15 @@
                 >
                   Fase atual
                 </span>
+                <button
+                  v-if="ehProfessor && !acoesSuspensas && faseStatus(abaSelecionada) === 'current'"
+                  type="button"
+                  @click="aprovarFase(abaSelecionada)"
+                  class="cursor-pointer flex items-center gap-1 bg-principal hover:bg-principal-opaco text-white px-[10px] py-[4px] rounded-full font-bold text-[12px]"
+                >
+                  <PhCheck :size="14" class="fill-white" />
+                  Aprovar fase
+                </button>
               </div>
               <span
                 :class="`text-xs font-bold px-[8px] py-[2px] rounded-full ${faseSelecionada.situacao === 'aprovada' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`"
@@ -342,8 +351,16 @@
                 </button>
               </template>
               <template v-else>
-                <Texto as="label">
-                  {{ faseSelecionada.prazo ? formatMask.viewDate(faseSelecionada.prazo) : 'Sem prazo definido' }}
+                <div v-if="prazoFase(abaSelecionada)" class="flex items-center gap-[6px]">
+                  <PhClock v-if="prazoFase(abaSelecionada).contagem" :size="19" class="fill-red-700 flex-shrink-0" />
+                  <span
+                    :class="`font-extrabold whitespace-nowrap px-[10px] py-[4px] rounded-md tabular-nums ${prazoFase(abaSelecionada).classe} ${prazoFase(abaSelecionada).contagem ? 'text-[19px]' : 'text-[15px]'}`"
+                  >
+                    {{ prazoFase(abaSelecionada).texto }}
+                  </span>
+                </div>
+                <Texto as="label" v-else>
+                  Sem prazo definido
                 </Texto>
                 <button
                   v-if="ehProfessor && !acoesSuspensas"
@@ -354,21 +371,15 @@
                   Editar
                 </button>
               </template>
-              <span
-                v-if="faseAtrasada(abaSelecionada)"
-                class="text-xs font-bold px-[8px] py-[2px] rounded-full bg-red-100 text-red-700"
-              >
-                Fase atrasada
-              </span>
             </div>
 
-            <div v-if="abaSelecionada === 0 || souFaseTema" class="flex flex-col gap-[6px] border-t border-secundaria-opaco pt-[10px]">
-              <Texto as="body-bold" color="principal">{{ souFaseTema ? 'Tema do TCC' : 'Descrição da proposta' }}</Texto>
+            <div v-if="souFaseTema" class="flex flex-col gap-[6px] border-t border-secundaria-opaco pt-[10px]">
+              <Texto as="body-bold" color="principal">Tema do TCC</Texto>
               <template v-if="!ehProfessor && !acoesSuspensas && faseSelecionada.situacao !== 'aprovada' && editandoDescricao">
                 <textarea
                   v-model="descricaoProposta"
                   rows="3"
-                  :placeholder="souFaseTema ? 'Digite o tema final do TCC, que será usado no cartaz de divulgação.' : 'Descreva sua ideia de TCC, referências, links úteis etc.'"
+                  placeholder="Digite o tema final do TCC, que será usado no cartaz de divulgação."
                   class="w-full border border-principal focus:outline-principal p-[8px] rounded-md text-sm"
                 ></textarea>
                 <div class="flex items-center gap-[10px]">
@@ -378,7 +389,7 @@
                     @click="salvarDescricaoProposta"
                   >
                     <PhFloppyDisk :size="18" class="fill-white" />
-                    {{ souFaseTema ? 'Salvar tema' : 'Salvar proposta' }}
+                    Salvar tema
                   </button>
                   <button
                     type="button"
@@ -391,14 +402,14 @@
               </template>
               <template v-else>
                 <div class="w-full border border-secundaria-opaco rounded-md p-[8px]">
-                  <Texto as="body" v-if="souFaseTema ? temaAtual : faseSelecionada.descricao">
-                    <template v-for="(parte, i) in linkify(souFaseTema ? temaAtual : faseSelecionada.descricao)" :key="i">
+                  <Texto as="body" v-if="temaAtual">
+                    <template v-for="(parte, i) in linkify(temaAtual)" :key="i">
                       <a v-if="parte.link" :href="parte.link" target="_blank" rel="noopener noreferrer" class="underline text-principal hover:text-principal-opaco break-all">{{ parte.texto }}</a>
                       <template v-else>{{ parte.texto }}</template>
                     </template>
                   </Texto>
                   <Texto as="label" color="gray" v-else>
-                    {{ souFaseTema ? 'O aluno ainda não definiu o tema.' : 'O aluno ainda não descreveu a proposta.' }}
+                    O aluno ainda não definiu o tema.
                   </Texto>
                 </div>
                 <button
@@ -412,238 +423,211 @@
               </template>
             </div>
 
-            <div class="flex flex-col gap-[6px] border-t border-secundaria-opaco pt-[10px]">
-              <Texto as="body-bold" color="principal">Arquivos</Texto>
-
-              <div class="border border-secundaria-opaco rounded-md overflow-hidden" v-if="faseSelecionada.arquivos?.length > 0">
-                <table class="w-full text-sm">
-                  <thead>
-                    <tr class="bg-secundaria border-b border-secundaria-opaco">
-                      <th class="p-2 text-left">
-                        <Texto as="small" color="gray">Nome</Texto>
-                      </th>
-                      <th class="p-2 text-left">
-                        <Texto as="small" color="gray">Data</Texto>
-                      </th>
-                      <th class="p-2 text-center">
-                        <Texto as="small" color="gray">Ações</Texto>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr
-                      v-for="(arquivo, idx) in faseSelecionada.arquivos"
-                      :key="arquivo._id"
-                      class="even:bg-secundaria border-b border-secundaria last:border-b-0"
-                    >
-                      <td class="p-2">
-                        <div class="flex items-center gap-[6px]">
-                          <PhFilePdf :size="18" class="fill-principal" />
-                          <span class="truncate max-w-[220px]" :title="arquivo.originalname">
-                            {{ arquivo.originalname }}
-                          </span>
-                        </div>
-                      </td>
-                      <td class="p-2 text-xs text-gray-600">
-                        {{ formatMask.viewDate(arquivo.dataEnvio) }}
-                      </td>
-                      <td class="p-2">
-                        <div class="flex items-center justify-center gap-1">
-                          <button
-                            type="button"
-                            @click="viewPdf(arquivo)"
-                            class="cursor-pointer p-[6px] border border-gray-300 hover:bg-secundaria rounded-md"
-                            title="Visualizar"
-                          >
-                            <PhEye :size="16" class="fill-principal" />
-                          </button>
-                          <button
-                            v-if="!ehProfessor && faseSelecionada.situacao !== 'aprovada' && idx === faseSelecionada.arquivos.length - 1"
-                            type="button"
-                            @click="removerArquivo(abaSelecionada, arquivo._id)"
-                            class="cursor-pointer p-[6px] border border-gray-300 hover:bg-secundaria rounded-md"
-                            title="Remover"
-                          >
-                            <PhTrash :size="16" class="fill-red-600" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+            <div v-else-if="abaSelecionada === 0" class="flex flex-col gap-[8px] border-t border-secundaria-opaco pt-[10px]">
+              <div class="flex items-center justify-between flex-wrap gap-[8px]">
+                <Texto as="body-bold" color="principal">Atividades</Texto>
+                <button
+                  v-if="ehProfessor && !acoesSuspensas"
+                  type="button"
+                  class="cursor-pointer flex items-center gap-[4px] text-[12px] font-bold text-principal hover:underline"
+                  @click="iniciarCriacaoAtividade"
+                >
+                  <PhPlus :size="14" />
+                  Nova atividade
+                </button>
               </div>
-              <Texto as="label" color="gray" v-else>
-                Nenhum arquivo enviado nesta fase ainda.
-              </Texto>
 
               <div
-                v-if="!ehProfessor && !acoesSuspensas && faseSelecionada.situacao !== 'aprovada'"
-                class="flex flex-col items-start gap-[6px]"
+                v-if="criandoAtividade"
+                class="flex flex-wrap items-end gap-[10px] border border-secundaria-opaco rounded-md bg-secundaria p-[10px]"
               >
-                <label
-                  for="upload"
-                  class="cursor-pointer inline-flex items-center gap-2 bg-principal text-white px-[14px] py-[8px] rounded-md hover:bg-principal-opaco"
+                <div class="w-full flex items-center gap-[16px]">
+                  <Texto as="label">O aluno deve:</Texto>
+                  <label class="flex items-center gap-[4px] cursor-pointer">
+                    <input type="radio" value="texto" v-model="novaAtividadeTipo" class="cursor-pointer accent-principal" />
+                    <Texto as="label">Digitar um texto</Texto>
+                  </label>
+                  <label class="flex items-center gap-[4px] cursor-pointer">
+                    <input type="radio" value="arquivo" v-model="novaAtividadeTipo" class="cursor-pointer accent-principal" />
+                    <Texto as="label">Enviar arquivo</Texto>
+                  </label>
+                </div>
+                <div class="flex-1 min-w-[160px]">
+                  <Campo v-model="novaAtividadeTitulo" label="Título" id="novaAtividadeTitulo" :obrigatorio="true" />
+                </div>
+                <div class="w-[160px]">
+                  <Campo v-model="novaAtividadePrazo" label="Prazo" id="novaAtividadePrazo" type="date" />
+                </div>
+                <button
+                  type="button"
+                  class="cursor-pointer bg-principal hover:bg-principal-opaco text-white px-[14px] py-[9px] rounded-md font-bold text-[13px]"
+                  @click="criarAtividade"
                 >
-                  <PhCloudArrowUp :size="18" class="fill-white" />
-                  <Texto as="button" color="white">
-                    Enviar PDF
-                  </Texto>
-                </label>
-                <input
-                  id="upload"
-                  type="file"
-                  accept=".pdf"
-                  class="hidden"
-                  @change="enviarArquivo($event, abaSelecionada)"
-                />
-                <Texto as="label" color="gray">
-                  Você pode enviar quantos arquivos quiser. A fase avança quando o orientador aprovar.
-                </Texto>
+                  Criar
+                </button>
+                <button
+                  type="button"
+                  class="cursor-pointer border border-gray-300 hover:bg-gray-100 px-[14px] py-[9px] rounded-md font-bold text-[13px]"
+                  @click="criandoAtividade = false"
+                >
+                  Cancelar
+                </button>
               </div>
-            </div>
 
-            <div class="flex flex-col gap-[8px] border-t border-secundaria-opaco pt-[10px]">
-              <Texto as="body-bold" color="principal">
-                Comentários
+              <Texto as="label" color="gray" v-if="!faseSelecionada.atividades?.length">
+                Nenhuma atividade cadastrada ainda.
               </Texto>
-              <div v-if="!faseSelecionada.comentarios?.length">
-                <Texto as="label" color="gray">
-                  Nenhum comentário ainda.
-                </Texto>
-              </div>
               <div
-                v-for="comentario in faseSelecionada.comentarios"
-                :key="comentario._id"
-                class="group flex items-end gap-[8px]"
-                :class="ehMeuComentario(comentario) ? 'flex-row' : 'flex-row-reverse'"
+                v-for="atividade in faseSelecionada.atividades"
+                :key="atividade._id"
+                class="flex flex-col gap-[8px] border border-secundaria-opaco rounded-md p-[8px]"
               >
-                <div
-                  class="relative flex items-center justify-center w-[28px] h-[28px] rounded-full text-white text-[12px] font-bold flex-shrink-0"
-                  :class="comentario.autor === 'professor' ? 'bg-principal' : 'bg-terciaria'"
-                  :title="nomeCompleto(comentario.autor === 'professor' ? orientacao.professor : orientacao.aluno)"
-                >
-                  {{ iniciais(comentario.autor === 'professor' ? orientacao.professor : orientacao.aluno) }}
-                  <span v-if="comentarioNaoLido(comentario)" class="absolute -top-[2px] -right-[2px] w-[8px] h-[8px] rounded-full bg-red-500 border border-white"></span>
+                <div v-if="atividadeEditando === atividade._id" class="flex flex-wrap items-end gap-[10px]">
+                  <div class="flex-1 min-w-[160px]">
+                    <Campo v-model="atividadeEdicaoTitulo" label="Título" :id="`atividadeEdicaoTitulo-${atividade._id}`" :obrigatorio="true" />
+                  </div>
+                  <div class="w-[160px]">
+                    <Campo v-model="atividadeEdicaoPrazo" label="Prazo" :id="`atividadeEdicaoPrazo-${atividade._id}`" type="date" />
+                  </div>
+                  <button
+                    type="button"
+                    class="cursor-pointer bg-principal hover:bg-principal-opaco text-white px-[14px] py-[9px] rounded-md font-bold text-[13px]"
+                    @click="salvarEdicaoAtividade(atividade)"
+                  >
+                    Salvar
+                  </button>
+                  <button
+                    type="button"
+                    class="cursor-pointer border border-gray-300 hover:bg-gray-100 px-[14px] py-[9px] rounded-md font-bold text-[13px]"
+                    @click="atividadeEditando = null"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+                <div v-else class="flex items-start justify-between gap-[8px]">
+                  <div class="flex items-center gap-[8px] min-w-0">
+                    <input
+                      v-if="ehProfessor"
+                      type="checkbox"
+                      :checked="atividade.concluida"
+                      :disabled="acoesSuspensas"
+                      @change="alternarConclusaoAtividade(atividade, $event.target.checked)"
+                      class="cursor-pointer w-[16px] h-[16px] accent-principal flex-shrink-0"
+                    />
+                    <div class="flex flex-col min-w-0">
+                      <Texto as="body" :color="atividade.concluida ? 'gray' : ''" :class="atividade.concluida ? 'line-through' : ''">
+                        {{ atividade.titulo }}
+                      </Texto>
+                      <div class="flex items-center gap-[6px] flex-wrap">
+                        <span class="text-[10px] font-bold uppercase px-[6px] py-[1px] rounded-full bg-secundaria text-gray-600">
+                          {{ atividade.tipo === 'arquivo' ? 'Arquivo' : 'Texto' }}
+                        </span>
+                        <span v-if="atividade.concluida" class="text-[10px] font-bold uppercase px-[6px] py-[1px] rounded-full bg-green-100 text-green-700">
+                          Concluída
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="flex flex-col items-end gap-[4px] flex-shrink-0">
+                    <div v-if="prazoAtividade(atividade)" class="flex items-center gap-[6px]">
+                      <PhClock v-if="prazoAtividade(atividade).contagem" :size="19" class="fill-red-700 flex-shrink-0" />
+                      <span
+                        :class="`font-extrabold whitespace-nowrap px-[10px] py-[4px] rounded-md tabular-nums ${prazoAtividade(atividade).classe} ${prazoAtividade(atividade).contagem ? 'text-[19px]' : 'text-[15px]'}`"
+                      >
+                        {{ prazoAtividade(atividade).texto }}
+                      </span>
+                    </div>
+                    <div v-if="ehProfessor && !acoesSuspensas" class="flex items-center gap-[8px]">
+                      <button
+                        type="button"
+                        title="Editar atividade"
+                        class="cursor-pointer text-gray-400 hover:text-principal"
+                        @click="iniciarEdicaoAtividade(atividade)"
+                      >
+                        <PhPencilSimple :size="15" />
+                      </button>
+                      <button
+                        type="button"
+                        title="Remover atividade"
+                        class="cursor-pointer text-gray-400 hover:text-red-600"
+                        @click="removerAtividade(atividade._id)"
+                      >
+                        <PhTrash :size="15" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
-                <div class="max-w-[75%] flex flex-col gap-[4px]" :class="ehMeuComentario(comentario) ? 'items-start' : 'items-end'">
-                  <Texto as="small" color="gray" class="px-[2px]">
-                    {{ nomeCompleto(comentario.autor === 'professor' ? orientacao.professor : orientacao.aluno) }}
+                <template v-if="atividade.tipo === 'texto'">
+                  <template v-if="!ehProfessor && !acoesSuspensas && faseSelecionada.situacao !== 'aprovada'">
+                    <textarea
+                      v-model="atividadeRespostas[atividade._id]"
+                      rows="2"
+                      placeholder="Digite sua resposta..."
+                      class="w-full border border-principal focus:outline-principal p-[6px] rounded-md text-sm"
+                    ></textarea>
+                    <button
+                      type="button"
+                      class="cursor-pointer self-start text-[12px] font-bold text-principal hover:underline"
+                      @click="enviarRespostaAtividade(atividade)"
+                    >
+                      Enviar resposta
+                    </button>
+                  </template>
+                  <div v-else-if="atividade.resposta" class="w-full border border-secundaria-opaco rounded-md p-[6px] bg-secundaria">
+                    <Texto as="body">{{ atividade.resposta }}</Texto>
+                  </div>
+                  <Texto as="label" color="gray" v-else>
+                    {{ ehProfessor ? 'O aluno ainda não respondeu.' : 'Sem resposta enviada.' }}
                   </Texto>
-                  <div
-                    class="rounded-md p-[8px] flex flex-col gap-[4px] border w-full"
-                    :class="[
-                      comentario.autor === 'professor' ? 'bg-secundaria border-secundaria-opaco' : 'bg-terciaria/10 border-terciaria/30',
-                      ehMeuComentario(comentario) ? 'rounded-bl-none' : 'rounded-br-none',
-                      comentarioNaoLido(comentario) ? 'ring-2 ring-terciaria' : '',
-                    ]"
-                  >
-                    <template v-if="comentarioEditando === comentario._id">
-                      <textarea
-                        v-model="comentarioEdicaoTexto"
-                        rows="2"
-                        class="w-full border border-principal focus:outline-principal p-[6px] rounded-md text-sm bg-white"
-                      ></textarea>
-                      <div class="flex items-center gap-[10px]">
-                        <button type="button" @click="salvarEdicaoComentario(abaSelecionada, comentario._id)" class="cursor-pointer text-[12px] font-bold text-principal hover:underline">
-                          Salvar
-                        </button>
-                        <button type="button" @click="comentarioEditando = null" class="cursor-pointer text-[12px] font-bold text-gray-500 hover:underline">
-                          Cancelar
-                        </button>
-                      </div>
-                    </template>
-                    <template v-else>
-                      <Texto as="body">
-                        <template v-for="(parte, i) in linkify(comentario.texto)" :key="i">
-                          <a v-if="parte.link" :href="parte.link" target="_blank" rel="noopener noreferrer" class="underline text-principal hover:text-principal-opaco break-all">{{ parte.texto }}</a>
-                          <template v-else>{{ parte.texto }}</template>
-                        </template>
-                      </Texto>
+                </template>
+                <template v-else>
+                  <div v-if="atividade.arquivos?.length" class="flex flex-col gap-[4px]">
+                    <div
+                      v-for="(arquivo, idx) in atividade.arquivos"
+                      :key="arquivo._id"
+                      class="flex items-center gap-[6px]"
+                    >
                       <button
-                        v-if="comentario.anexo"
                         type="button"
-                        @click="viewPdf(comentario.anexo)"
-                        :title="comentario.anexo.originalname"
-                        class="cursor-pointer self-start flex items-center gap-[6px] px-[8px] py-[4px] bg-white hover:bg-gray-100 border border-gray-300 rounded-md text-xs max-w-[220px]"
+                        @click="viewPdf(arquivo)"
+                        class="cursor-pointer flex items-center gap-[6px] px-[8px] py-[4px] bg-white hover:bg-gray-100 border border-gray-300 rounded-md text-xs max-w-[260px]"
                       >
                         <PhFilePdf :size="14" class="fill-principal flex-shrink-0" />
-                        <span class="truncate">{{ comentario.anexo.originalname }}</span>
+                        <span class="truncate">{{ arquivo.originalname }}</span>
                       </button>
-                      <div class="flex items-center gap-[4px] self-end">
-                        <Texto as="small" color="gray" v-if="comentario.editado">editado ·</Texto>
-                        <Texto as="small" color="gray">{{ formatMask.viewDate(comentario.data) }}</Texto>
-                      </div>
-                    </template>
+                      <button
+                        v-if="!ehProfessor && !acoesSuspensas && faseSelecionada.situacao !== 'aprovada' && idx === atividade.arquivos.length - 1"
+                        type="button"
+                        title="Remover arquivo"
+                        class="cursor-pointer text-gray-400 hover:text-red-600"
+                        @click="removerArquivoAtividade(atividade, arquivo._id)"
+                      >
+                        <PhTrash :size="13" />
+                      </button>
+                    </div>
                   </div>
-
-                  <div
-                    v-if="ehMeuComentario(comentario) && !acoesSuspensas && comentarioEditando !== comentario._id"
-                    class="flex items-center gap-[10px] opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <button type="button" @click="iniciarEdicaoComentario(comentario)" title="Editar comentário" class="cursor-pointer text-gray-400 hover:text-principal">
-                      <PhPencilSimple :size="13" />
-                    </button>
-                    <button type="button" @click="removerComentario(abaSelecionada, comentario._id)" title="Excluir comentário" class="cursor-pointer text-gray-400 hover:text-red-600">
-                      <PhTrash :size="13" />
-                    </button>
+                  <Texto as="label" color="gray" v-else-if="ehProfessor">
+                    O aluno ainda não enviou arquivo.
+                  </Texto>
+                  <div v-if="!ehProfessor && !acoesSuspensas && faseSelecionada.situacao !== 'aprovada'">
+                    <label
+                      :for="`arquivoAtividade-${atividade._id}`"
+                      class="cursor-pointer inline-flex items-center gap-1 text-[12px] font-bold text-principal hover:underline"
+                    >
+                      <PhCloudArrowUp :size="14" />
+                      Enviar PDF
+                    </label>
+                    <input
+                      :id="`arquivoAtividade-${atividade._id}`"
+                      type="file"
+                      accept=".pdf"
+                      class="hidden"
+                      @change="enviarArquivoAtividade($event, atividade)"
+                    />
                   </div>
-                </div>
+                </template>
               </div>
-
-              <template v-if="!acoesSuspensas">
-                <textarea
-                  ref="comentarioTextareaRef"
-                  v-model="comentarioTexto[abaSelecionada]"
-                  rows="2"
-                  placeholder="Escreva um comentário..."
-                  class="w-full border border-principal focus:outline-principal p-[8px] rounded-md text-sm resize-none overflow-hidden"
-                  @input="aoDigitarComentario"
-                ></textarea>
-                <div
-                  v-if="comentarioAnexo[abaSelecionada]"
-                  class="flex items-center gap-[6px] text-xs text-gray-600 bg-gray-100 border border-gray-300 rounded-md px-[8px] py-[4px] w-fit"
-                >
-                  <PhFilePdf :size="14" class="fill-principal flex-shrink-0" />
-                  <span class="truncate max-w-[160px]">{{ comentarioAnexo[abaSelecionada].name }}</span>
-                  <button type="button" @click="comentarioAnexo[abaSelecionada] = null" class="cursor-pointer text-gray-500 hover:text-red-600">
-                    <PhX :size="12" />
-                  </button>
-                </div>
-                <div class="flex items-center gap-[8px] flex-wrap">
-                  <button
-                    type="button"
-                    @click="enviarComentario(abaSelecionada)"
-                    class="cursor-pointer border border-gray-300 hover:bg-gray-200 px-[14px] py-[8px] rounded-md font-bold text-[14px]"
-                  >
-                    Enviar comentário
-                  </button>
-                  <label
-                    :for="`anexoComentario-${abaSelecionada}`"
-                    title="Anexar arquivo ao comentário"
-                    class="cursor-pointer flex items-center justify-center p-[9px] border border-gray-300 text-gray-500 hover:bg-gray-100 hover:text-principal rounded-md"
-                  >
-                    <PhPaperclip :size="16" />
-                  </label>
-                  <input
-                    :id="`anexoComentario-${abaSelecionada}`"
-                    type="file"
-                    accept=".pdf"
-                    class="hidden"
-                    @change="selecionarAnexoComentario($event, abaSelecionada)"
-                  />
-                  <button
-                    v-if="ehProfessor && faseSelecionada.situacao !== 'aprovada'"
-                    type="button"
-                    @click="aprovarFase(abaSelecionada)"
-                    :disabled="!faseSelecionada.arquivos?.length"
-                    class="cursor-pointer bg-principal hover:bg-principal-opaco disabled:opacity-50 disabled:cursor-not-allowed text-white px-[14px] py-[8px] rounded-md font-bold text-[14px] flex items-center gap-1"
-                  >
-                    <PhCheck :size="18" class="fill-white" />
-                    Aprovar fase
-                  </button>
-                </div>
-              </template>
             </div>
           </div>
         </template>
@@ -727,6 +711,165 @@
         </div>
       </template>
     </section>
+
+    <template v-if="!viewing && orientacao.fases?.length">
+      <div
+        v-if="chatAberto"
+        class="fixed bottom-[88px] right-[20px] z-50 w-[92vw] max-w-[380px] max-h-[65vh] bg-white border border-secundaria-opaco rounded-md shadow-xl flex flex-col overflow-hidden"
+      >
+        <div class="flex items-center justify-between px-[12px] py-[10px] border-b border-secundaria-opaco flex-shrink-0">
+          <Texto as="body-bold" color="principal">
+            Comentários
+          </Texto>
+          <button type="button" @click="chatAberto = false" class="cursor-pointer text-gray-400 hover:text-gray-700">
+            <PhX :size="18" />
+          </button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto flex flex-col gap-[8px] p-[12px]">
+          <div v-if="!faseSelecionada.comentarios?.length">
+            <Texto as="label" color="gray">
+              Nenhum comentário ainda.
+            </Texto>
+          </div>
+          <div
+            v-for="comentario in faseSelecionada.comentarios"
+            :key="comentario._id"
+            class="group flex items-end gap-[8px]"
+            :class="ehMeuComentario(comentario) ? 'flex-row-reverse' : 'flex-row'"
+          >
+            <div
+              class="relative flex items-center justify-center w-[28px] h-[28px] rounded-full text-white text-[12px] font-bold flex-shrink-0"
+              :class="comentario.autor === 'professor' ? 'bg-principal' : 'bg-terciaria'"
+              :title="nomeCompleto(comentario.autor === 'professor' ? orientacao.professor : orientacao.aluno)"
+            >
+              {{ iniciais(comentario.autor === 'professor' ? orientacao.professor : orientacao.aluno) }}
+              <span v-if="comentarioNaoLido(comentario)" class="absolute -top-[2px] -right-[2px] w-[8px] h-[8px] rounded-full bg-red-500 border border-white"></span>
+            </div>
+
+            <div class="max-w-[75%] flex flex-col gap-[4px]" :class="ehMeuComentario(comentario) ? 'items-end' : 'items-start'">
+              <Texto as="small" color="gray" class="px-[2px]">
+                {{ nomeCompleto(comentario.autor === 'professor' ? orientacao.professor : orientacao.aluno) }}
+              </Texto>
+              <div
+                class="rounded-2xl px-[12px] py-[8px] flex flex-col gap-[4px] w-full"
+                :class="[
+                  ehMeuComentario(comentario) ? 'bg-principal rounded-br-[4px]' : 'bg-gray-200 rounded-bl-[4px]',
+                  comentarioNaoLido(comentario) ? 'ring-2 ring-terciaria' : '',
+                ]"
+              >
+                <template v-if="comentarioEditando === comentario._id">
+                  <textarea
+                    v-model="comentarioEdicaoTexto"
+                    rows="2"
+                    class="w-full border border-principal focus:outline-principal p-[6px] rounded-md text-sm bg-white text-black"
+                  ></textarea>
+                  <div class="flex items-center gap-[10px]">
+                    <button type="button" @click="salvarEdicaoComentario(abaSelecionada, comentario._id)" class="cursor-pointer text-[12px] font-bold text-principal hover:underline">
+                      Salvar
+                    </button>
+                    <button type="button" @click="comentarioEditando = null" class="cursor-pointer text-[12px] font-bold text-gray-500 hover:underline">
+                      Cancelar
+                    </button>
+                  </div>
+                </template>
+                <template v-else>
+                  <Texto as="body" :color="ehMeuComentario(comentario) ? 'white' : ''">
+                    <template v-for="(parte, i) in linkify(comentario.texto)" :key="i">
+                      <a v-if="parte.link" :href="parte.link" target="_blank" rel="noopener noreferrer" class="underline hover:opacity-80 break-all" :class="ehMeuComentario(comentario) ? 'text-white' : 'text-principal'">{{ parte.texto }}</a>
+                      <template v-else>{{ parte.texto }}</template>
+                    </template>
+                  </Texto>
+                  <button
+                    v-if="comentario.anexo"
+                    type="button"
+                    @click="viewPdf(comentario.anexo)"
+                    :title="comentario.anexo.originalname"
+                    class="cursor-pointer self-start flex items-center gap-[6px] px-[8px] py-[4px] bg-white hover:bg-gray-100 border border-gray-300 rounded-md text-xs max-w-[220px]"
+                  >
+                    <PhFilePdf :size="14" class="fill-principal flex-shrink-0" />
+                    <span class="truncate">{{ comentario.anexo.originalname }}</span>
+                  </button>
+                  <div class="flex items-center gap-[4px] self-end">
+                    <Texto as="small" :color="ehMeuComentario(comentario) ? 'white' : 'gray'" :class="ehMeuComentario(comentario) ? 'opacity-70' : ''" v-if="comentario.editado">editado ·</Texto>
+                    <Texto as="small" :color="ehMeuComentario(comentario) ? 'white' : 'gray'" :class="ehMeuComentario(comentario) ? 'opacity-70' : ''">{{ formatMask.viewDate(comentario.data) }}</Texto>
+                  </div>
+                </template>
+              </div>
+
+              <div
+                v-if="ehMeuComentario(comentario) && !acoesSuspensas && comentarioEditando !== comentario._id"
+                class="flex items-center gap-[10px] opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <button type="button" @click="iniciarEdicaoComentario(comentario)" title="Editar comentário" class="cursor-pointer text-gray-400 hover:text-principal">
+                  <PhPencilSimple :size="13" />
+                </button>
+                <button type="button" @click="removerComentario(abaSelecionada, comentario._id)" title="Excluir comentário" class="cursor-pointer text-gray-400 hover:text-red-600">
+                  <PhTrash :size="13" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <template v-if="!acoesSuspensas">
+          <div class="flex flex-col gap-[8px] border-t border-secundaria-opaco p-[10px] flex-shrink-0">
+            <textarea
+              ref="comentarioTextareaRef"
+              v-model="comentarioTexto[abaSelecionada]"
+              rows="2"
+              placeholder="Escreva um comentário..."
+              class="w-full border border-principal focus:outline-principal p-[8px] rounded-md text-sm resize-none overflow-hidden"
+              @input="aoDigitarComentario"
+            ></textarea>
+            <div
+              v-if="comentarioAnexo[abaSelecionada]"
+              class="flex items-center gap-[6px] text-xs text-gray-600 bg-gray-100 border border-gray-300 rounded-md px-[8px] py-[4px] w-fit"
+            >
+              <PhFilePdf :size="14" class="fill-principal flex-shrink-0" />
+              <span class="truncate max-w-[160px]">{{ comentarioAnexo[abaSelecionada].name }}</span>
+              <button type="button" @click="comentarioAnexo[abaSelecionada] = null" class="cursor-pointer text-gray-500 hover:text-red-600">
+                <PhX :size="12" />
+              </button>
+            </div>
+            <div class="flex items-center gap-[8px] flex-wrap">
+              <button
+                type="button"
+                @click="enviarComentario(abaSelecionada)"
+                class="cursor-pointer border border-gray-300 hover:bg-gray-200 px-[14px] py-[8px] rounded-md font-bold text-[14px]"
+              >
+                Enviar comentário
+              </button>
+              <label
+                :for="`anexoComentario-${abaSelecionada}`"
+                title="Anexar arquivo ao comentário"
+                class="cursor-pointer flex items-center justify-center p-[9px] border border-gray-300 text-gray-500 hover:bg-gray-100 hover:text-principal rounded-md"
+              >
+                <PhPaperclip :size="16" />
+              </label>
+              <input
+                :id="`anexoComentario-${abaSelecionada}`"
+                type="file"
+                accept=".pdf"
+                class="hidden"
+                @change="selecionarAnexoComentario($event, abaSelecionada)"
+              />
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <button
+        type="button"
+        @click="chatAberto = !chatAberto"
+        title="Comentários da fase"
+        class="fixed bottom-[20px] right-[20px] z-50 w-[56px] h-[56px] rounded-full bg-principal hover:bg-principal-opaco text-white shadow-lg flex items-center justify-center cursor-pointer"
+      >
+        <PhX v-if="chatAberto" :size="26" class="fill-white" />
+        <PhChatCircleDots v-else :size="26" class="fill-white" />
+        <span v-if="!chatAberto && temComentarioNaoLido" class="absolute -top-[2px] -right-[2px] w-[14px] h-[14px] rounded-full bg-red-500 border-2 border-white"></span>
+      </button>
+    </template>
   </main>
 </template>
 
@@ -734,9 +877,9 @@
 import { onMounted, onUnmounted, nextTick, reactive, ref, computed, watch, defineAsyncComponent } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
-  PhTrash, PhEye, PhCloudArrowUp, PhFilePdf, PhMagnifyingGlass,
+  PhTrash, PhCloudArrowUp, PhFilePdf, PhMagnifyingGlass,
   PhCaretLeft, PhCheck, PhCheckCircle, PhLockSimple, PhLockSimpleOpen, PhX, PhPaperclip, PhPencilSimple, PhFloppyDisk, PhClock, PhVideoCamera,
-  PhCalendarBlank, PhCalendarPlus,
+  PhCalendarBlank, PhCalendarPlus, PhChatCircleDots, PhPlus,
 } from '@phosphor-icons/vue';
 import Texto from '@components/Texto.vue';
 import Campo from '@components/Campo.vue';
@@ -760,7 +903,7 @@ const router = useRouter();
 const openNegarOrientacao = ref(false);
 const openGerarCartaz = ref(false);
 const openVideochamada = ref(false);
-const modoVideochamada = ref('reuniao'); // 'reuniao' (sala nova por clique) | 'defesa' (sala fixa do cartaz)
+const modoVideochamada = ref('reuniao');
 const agendandoReuniao = ref(false);
 const reuniaoAgendarData = ref('');
 const reuniaoAgendarHora = ref('');
@@ -771,29 +914,20 @@ const urlApi = import.meta.env.VITE_URL;
 
 const ehProfessor = computed(() => props.usuario?.tipo === 'professor');
 
-// depois do cartaz gerado, o botão de reunião vira "Sala de defesa" e passa a
-// usar a mesma sala fixa da defesa - a sala já é pública (link no cartaz), o
-// aluno não precisa mais esperar o professor "abrir" pra poder entrar.
 const salaReuniaoAtiva = computed(() => (
   orientacao.cartazGerado ? true : !!orientacao.reuniao?.ativa
 ));
 
 const somenteLeitura = computed(() => orientacao.ativo === false);
 
-// pendente de verdade = tem solicitadoPor e ainda não foi respondido. Depois
-// de respondido, o cancelamento continua no objeto só pra exibir o aviso
-// (mostrarRespostaCancelamento) por 24h, sem travar mais nada.
 const cancelamentoAtivo = computed(() => !!orientacao.cancelamento?.solicitadoPor && !orientacao.cancelamento?.resposta?.data);
 
-// ponytail: enquanto há cancelamento pendente, todo o resto some (upload,
-// comentário, prazo, aprovar) - a mesma suspensão que o backend já aplica.
 const acoesSuspensas = computed(() => somenteLeitura.value || cancelamentoAtivo.value);
 
-// ponytail: sem esse "tick" o computed só recalcula quando outra coisa muda
-// (poll, ação) - com ele, o aviso some sozinho ao completar 24h e a contagem
-// regressiva atualiza a cada minuto.
 const agora = ref(Date.now());
 let tickInterval = null;
+const agoraSegundo = ref(Date.now());
+let tickSegundoInterval = null;
 
 const mostrarRespostaCancelamento = computed(() => {
   const resposta = orientacao.cancelamento?.resposta;
@@ -832,12 +966,10 @@ const comentarioAnexo = reactive({});
 const comentarioEditando = ref(null);
 const comentarioEdicaoTexto = ref('');
 const abaSelecionada = ref(0);
+const chatAberto = ref(false);
 
 const faseSelecionada = computed(() => orientacao.fases[abaSelecionada.value] || {});
-// o aluno define o tema na Pré-defesa e ainda pode ajustar na Versão final
-// (antes do cartaz ser gerado de vez). Guarda sempre na descrição da
-// Pré-defesa — a aba de Versão final é só outra porta de entrada pro mesmo
-// campo, não um tema separado.
+const temComentarioNaoLido = computed(() => faseSelecionada.value.comentarios?.some(comentarioNaoLido));
 const indiceFaseTema = computed(() => orientacao.fases.findIndex((f) => f.nome === 'Pré-defesa'));
 const souFaseTema = computed(() => {
   const fase = orientacao.fases?.[abaSelecionada.value];
@@ -849,18 +981,23 @@ const prazoEditando = ref('');
 const editandoPrazo = ref(false);
 const descricaoProposta = ref('');
 const editandoDescricao = ref(false);
+const criandoAtividade = ref(false);
+const novaAtividadeTitulo = ref('');
+const novaAtividadePrazo = ref('');
+const novaAtividadeTipo = ref('texto');
+const atividadeRespostas = reactive({});
+const atividadeEditando = ref(null);
+const atividadeEdicaoTitulo = ref('');
+const atividadeEdicaoPrazo = ref('');
 
-// ponytail: watch na aba, não na fase — a fase muda de referência a cada poll
-// (10s) mesmo sem alteração real, e resetava os campos/edições em andamento.
 watch(abaSelecionada, () => {
   const fase = faseSelecionada.value;
   prazoEditando.value = fase?.prazo ? formatMask.date(fase.prazo) : '';
-  descricaoProposta.value = souFaseTema.value ? temaAtual.value : (fase?.descricao || '');
+  descricaoProposta.value = temaAtual.value;
   editandoPrazo.value = false;
   editandoDescricao.value = false;
-  // a caixa de comentário é uma só reaproveitada entre as abas - ao trocar de
-  // aba o texto muda sem disparar "input", então a altura fica do tamanho do
-  // comentário da aba anterior se não recalcular aqui.
+  criandoAtividade.value = false;
+  atividadeEditando.value = null;
   nextTick(() => redimensionarComentario());
 }, { immediate: true });
 
@@ -873,16 +1010,10 @@ function redimensionarComentario() {
   el.style.height = `${el.scrollHeight}px`;
 }
 
-// cresce a caixa junto com o texto e desce a tela na mesma medida que ela
-// cresceu, pra quem está digitando não perder a caixa (e o botão "Enviar")
-// de vista conforme o comentário fica mais longo.
 function aoDigitarComentario(event) {
   const alturaAntes = event.target.offsetHeight;
   redimensionarComentario();
   const crescimento = event.target.offsetHeight - alturaAntes;
-  // instantâneo, não 'smooth' - a caixa já cresceu na hora (reflow síncrono),
-  // um scroll suave atrasado faz o conteúdo abaixo "sumir" por um instante
-  // até a rolagem alcançar o tamanho novo.
   if (crescimento > 0) window.scrollBy({ top: crescimento, behavior: 'auto' });
 }
 
@@ -997,6 +1128,11 @@ async function start() {
       orientacao.dataDefesa = formatMask.date(orientacao.dataDefesa);
       if (!orientacao.coorientador) orientacao.coorientador = { nome: '', instituicao: '' };
       if (!orientacao.banca) orientacao.banca = [];
+      (orientacao.fases?.[0]?.atividades || []).forEach((atividade) => {
+        if (atividade.tipo === 'texto' && atividadeRespostas[atividade._id] === undefined) {
+          atividadeRespostas[atividade._id] = atividade.resposta || '';
+        }
+      });
       if (primeiraCarga) {
         const desde = ehProfessor.value ? orientacao.ultimaVisualizacaoProfessor : orientacao.ultimaVisualizacaoAluno;
         dataDesdeSnapshot.value = desde ? new Date(desde) : new Date(0);
@@ -1004,9 +1140,6 @@ async function start() {
         abaSelecionada.value = novidade ?? Math.min(faseAtualIndex.value, orientacao.fases.length - 1);
         primeiraCarga = false;
       }
-      // ponytail: sem o await aqui, quem navega rápido (ex.: clica e já volta
-      // pra Home) podia sair da página antes desse PUT terminar - o sino do
-      // menu ficava aceso mesmo já tendo "lido", até o poll de 20s alcançar.
       await api.put(`/orientacao/${orientacao._id}/visualizar`)
         .then(() => window.dispatchEvent(new Event('sotcc:notificacao-vista')))
         .catch(() => {});
@@ -1018,7 +1151,23 @@ async function start() {
   isLoading.changeStateFalse();
 }
 
-async function enviarArquivo(event, faseIndex) {
+async function enviarRespostaAtividade(atividade) {
+  if (!atividadeRespostas[atividade._id]?.trim()) {
+    return popupInfo().warning('Escreva uma resposta.');
+  }
+  isLoading.changeStateTrue();
+  await api.put(`/orientacao/${orientacao._id}/fases/${abaSelecionada.value}/atividade/${atividade._id}/resposta`, {
+    texto: atividadeRespostas[atividade._id],
+  })
+    .then(async (res) => {
+      popupInfo().success(res.data?.msg);
+      await start();
+    })
+    .catch((e) => popupInfo().warning(e.response?.data?.msg || 'Erro ao enviar resposta.'))
+    .finally(() => isLoading.changeStateFalse());
+}
+
+async function enviarArquivoAtividade(event, atividade) {
   const file = event.target.files[0];
   event.target.value = '';
   if (!file) return;
@@ -1028,7 +1177,7 @@ async function enviarArquivo(event, faseIndex) {
   const formData = new FormData();
   formData.append('arquivo', file);
   isLoading.changeStateTrue();
-  await api.post(`/orientacao/${orientacao._id}/fases/${faseIndex}/arquivo`, formData)
+  await api.post(`/orientacao/${orientacao._id}/fases/${abaSelecionada.value}/atividade/${atividade._id}/arquivo`, formData)
     .then(async (res) => {
       popupInfo().success(res.data?.msg);
       await start();
@@ -1037,15 +1186,48 @@ async function enviarArquivo(event, faseIndex) {
     .finally(() => isLoading.changeStateFalse());
 }
 
-async function removerArquivo(faseIndex, arquivoId) {
+async function removerArquivoAtividade(atividade, arquivoId) {
   isLoading.changeStateTrue();
-  await api.delete(`/orientacao/${orientacao._id}/fases/${faseIndex}/arquivo/${arquivoId}`)
+  await api.delete(`/orientacao/${orientacao._id}/fases/${abaSelecionada.value}/atividade/${atividade._id}/arquivo/${arquivoId}`)
     .then(async (res) => {
       popupInfo().success(res.data?.msg);
       await start();
     })
     .catch((e) => popupInfo().warning(e.response?.data?.msg || 'Erro ao remover arquivo.'))
     .finally(() => isLoading.changeStateFalse());
+}
+
+function prazoInfo(prazoValor, resolvido) {
+  if (!prazoValor) return null;
+  const prazoData = new Date(prazoValor);
+  const data = formatMask.viewDate(prazoValor);
+  if (resolvido) return { texto: data, classe: 'bg-secundaria text-gray-600' };
+  const fimDoDia = Date.UTC(prazoData.getUTCFullYear(), prazoData.getUTCMonth(), prazoData.getUTCDate(), 23, 59, 59, 999);
+  const restanteMs = fimDoDia - agora.value;
+  if (restanteMs <= 0) return { texto: data, classe: 'bg-red-600 text-white' };
+  if (restanteMs <= 24 * 60 * 60 * 1000) {
+    const restanteSeg = Math.max(0, Math.floor((fimDoDia - agoraSegundo.value) / 1000));
+    const h = String(Math.floor(restanteSeg / 3600)).padStart(2, '0');
+    const m = String(Math.floor((restanteSeg % 3600) / 60)).padStart(2, '0');
+    const s = String(restanteSeg % 60).padStart(2, '0');
+    return { texto: `${h}:${m}:${s}`, classe: 'bg-red-100 text-red-700', contagem: true };
+  }
+  const hojeUTC = Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate());
+  const prazoUTC = Date.UTC(prazoData.getUTCFullYear(), prazoData.getUTCMonth(), prazoData.getUTCDate());
+  const diasRestantes = Math.round((prazoUTC - hojeUTC) / (24 * 60 * 60 * 1000));
+  const texto = `Restam ${diasRestantes} dia${diasRestantes === 1 ? '' : 's'} (${data})`;
+  if (restanteMs <= 3 * 24 * 60 * 60 * 1000) return { texto, classe: 'bg-orange-100 text-orange-700' };
+  return { texto, classe: 'bg-secundaria text-gray-600' };
+}
+
+function prazoAtividade(atividade) {
+  return prazoInfo(atividade.prazo, atividade.concluida);
+}
+
+function prazoFase(index) {
+  const fase = orientacao.fases?.[index];
+  if (!fase) return null;
+  return prazoInfo(fase.prazo, fase.situacao === 'aprovada');
 }
 
 async function aprovarFase(faseIndex) {
@@ -1136,14 +1318,13 @@ async function removerComentario(faseIndex, comentarioId) {
 }
 
 function iniciarEdicaoDescricao() {
-  descricaoProposta.value = souFaseTema.value ? temaAtual.value : (faseSelecionada.value?.descricao || '');
+  descricaoProposta.value = temaAtual.value;
   editandoDescricao.value = true;
 }
 
 async function salvarDescricaoProposta() {
   isLoading.changeStateTrue();
-  const indiceDestino = souFaseTema.value ? indiceFaseTema.value : abaSelecionada.value;
-  await api.put(`/orientacao/${orientacao._id}/fases/${indiceDestino}/descricao`, {
+  await api.put(`/orientacao/${orientacao._id}/fases/${indiceFaseTema.value}/descricao`, {
     descricao: descricaoProposta.value,
   })
     .then(async (res) => {
@@ -1152,6 +1333,79 @@ async function salvarDescricaoProposta() {
       await start();
     })
     .catch((e) => popupInfo().warning(e.response?.data?.msg || 'Erro ao salvar descrição.'))
+    .finally(() => isLoading.changeStateFalse());
+}
+
+function iniciarCriacaoAtividade() {
+  novaAtividadeTitulo.value = '';
+  novaAtividadePrazo.value = '';
+  novaAtividadeTipo.value = 'texto';
+  criandoAtividade.value = true;
+}
+
+async function criarAtividade() {
+  if (!novaAtividadeTitulo.value?.trim()) {
+    return popupInfo().warning('Escreva um título para a atividade.');
+  }
+  isLoading.changeStateTrue();
+  await api.post(`/orientacao/${orientacao._id}/fases/${abaSelecionada.value}/atividade`, {
+    titulo: novaAtividadeTitulo.value,
+    prazo: novaAtividadePrazo.value || null,
+    tipo: novaAtividadeTipo.value,
+  })
+    .then(async (res) => {
+      popupInfo().success(res.data?.msg);
+      criandoAtividade.value = false;
+      await start();
+    })
+    .catch((e) => popupInfo().warning(e.response?.data?.msg || 'Erro ao criar atividade.'))
+    .finally(() => isLoading.changeStateFalse());
+}
+
+function iniciarEdicaoAtividade(atividade) {
+  atividadeEditando.value = atividade._id;
+  atividadeEdicaoTitulo.value = atividade.titulo;
+  atividadeEdicaoPrazo.value = atividade.prazo ? formatMask.date(atividade.prazo) : '';
+}
+
+async function salvarEdicaoAtividade(atividade) {
+  if (!atividadeEdicaoTitulo.value?.trim()) {
+    return popupInfo().warning('Escreva um título para a atividade.');
+  }
+  isLoading.changeStateTrue();
+  await api.put(`/orientacao/${orientacao._id}/fases/${abaSelecionada.value}/atividade/${atividade._id}`, {
+    titulo: atividadeEdicaoTitulo.value,
+    prazo: atividadeEdicaoPrazo.value || null,
+  })
+    .then(async (res) => {
+      popupInfo().success(res.data?.msg);
+      atividadeEditando.value = null;
+      await start();
+    })
+    .catch((e) => popupInfo().warning(e.response?.data?.msg || 'Erro ao editar atividade.'))
+    .finally(() => isLoading.changeStateFalse());
+}
+
+async function alternarConclusaoAtividade(atividade, concluida) {
+  isLoading.changeStateTrue();
+  await api.put(`/orientacao/${orientacao._id}/fases/${abaSelecionada.value}/atividade/${atividade._id}/concluir`, {
+    concluida,
+  })
+    .then(async () => {
+      await start();
+    })
+    .catch((e) => popupInfo().warning(e.response?.data?.msg || 'Erro ao atualizar atividade.'))
+    .finally(() => isLoading.changeStateFalse());
+}
+
+async function removerAtividade(atividadeId) {
+  isLoading.changeStateTrue();
+  await api.delete(`/orientacao/${orientacao._id}/fases/${abaSelecionada.value}/atividade/${atividadeId}`)
+    .then(async (res) => {
+      popupInfo().success(res.data?.msg);
+      await start();
+    })
+    .catch((e) => popupInfo().warning(e.response?.data?.msg || 'Erro ao remover atividade.'))
     .finally(() => isLoading.changeStateFalse());
 }
 
@@ -1181,9 +1435,6 @@ function viewPdf(arquivo) {
   selectedFile.value = arquivo;
   viewing.value = true;
   zoomLevel.value = 1.0;
-  // a tela do PDF é bem mais curta que a de acompanhamento - se a página
-  // estava rolada pra baixo (ex.: depois de digitar um comentário longo), o
-  // botão "voltar" nasce fora da área visível e parece que não responde.
   window.scrollTo({ top: 0 });
 }
 
@@ -1251,8 +1502,6 @@ async function retirarSolicitacaoCancelamento() {
     .finally(() => isLoading.changeStateFalse());
 }
 
-// reabre o formulário já preenchido com o que está marcado - o professor
-// pode alterar data/hora só sobrescrevendo e confirmando de novo.
 function abrirAgendamentoReuniao() {
   const agendada = orientacao.reuniao?.agendadaPara;
   if (agendada && !orientacao.reuniao?.ativa) {
@@ -1286,9 +1535,6 @@ async function confirmarAgendamentoReuniao() {
     .finally(() => isLoading.changeStateFalse());
 }
 
-// ponytail: sem infra de push (service worker/VAPID); polling + Notification API
-// avisa quem está com a página aberta. Se precisar avisar com o app
-// fechado, aí sim vale montar push de verdade.
 let pollInterval = null;
 
 function notificarNovoPrazo(fase, prazoAntigo, prazoNovo) {
@@ -1324,9 +1570,6 @@ function notificarRespostaCancelamento(resposta) {
   notificarNavegador('SOTCC - Resposta ao cancelamento', texto);
 }
 
-// depois do cartaz a sala já está sempre liberada pro aluno (não tem mais um
-// "iniciar" pra notificar) - só a reunião avulsa (antes do cartaz) tem esse
-// evento de verdade.
 function salaAtivaDe(dados) {
   return dados.cartazGerado ? true : !!dados.reuniao?.ativa;
 }
@@ -1365,9 +1608,6 @@ async function verificarMudancasFase() {
         notificarNavegador('SOTCC - Reunião marcada', `O orientador marcou uma reunião para ${formatMask.viewDataHora(agendadaParaDepois)}.`);
       }
       if (!ehProfessor.value && salaAtivaAntes && !salaAtivaDepois && openVideochamada.value) {
-        // ponytail: se o professor encerra pelo próprio Jitsi (sem passar
-        // pelo botão "fechar" do modal), o aluno fica preso numa sala morta
-        // até o próximo poll - fecha o modal dele junto.
         openVideochamada.value = false;
         notificarNavegador('SOTCC - Reunião', 'O orientador encerrou a sala.');
       }
@@ -1392,8 +1632,6 @@ async function verificarMudancasFase() {
       });
       const dadosNovos = { ...res.data.orientacao };
       if (openGerarCartaz.value) {
-        // ponytail: enquanto o cartaz está aberto, não sobrescreve os campos
-        // que o formulário edita — senão o poll apaga o que a pessoa digitou.
         delete dadosNovos.tema;
         delete dadosNovos.coorientador;
         delete dadosNovos.dataDefesa;
@@ -1414,19 +1652,21 @@ function verificarMudancasFaseSeVisivel() {
 
 onMounted(async () => {
   await start();
+  await nextTick();
+  window.scrollTo({ top: document.body.scrollHeight });
   if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
     Notification.requestPermission();
   }
   pollInterval = setInterval(verificarMudancasFase, 10000);
-  // ponytail: tabs em segundo plano têm o setInterval limitado pelo navegador;
-  // reconferir ao focar cobre o caso comum de testar trocando de aba.
   document.addEventListener('visibilitychange', verificarMudancasFaseSeVisivel);
   tickInterval = setInterval(() => { agora.value = Date.now(); }, 60000);
+  tickSegundoInterval = setInterval(() => { agoraSegundo.value = Date.now(); }, 1000);
 });
 
 onUnmounted(() => {
   if (pollInterval) clearInterval(pollInterval);
   if (tickInterval) clearInterval(tickInterval);
+  if (tickSegundoInterval) clearInterval(tickSegundoInterval);
   document.removeEventListener('visibilitychange', verificarMudancasFaseSeVisivel);
 });
 </script>

@@ -1,7 +1,7 @@
 import express from "express";
 import { listar, pegarPorId, alterarSituacao, criar, deletar, editar, orientacaoPorProfessor, listarPublicas, concluirOrientacao, historico, marcarNotificacoesVistas } from "./Controller.js";
-import { visualizarFases, enviarArquivoFase, removerArquivoFase, comentarFase, removerComentarioFase, editarComentarioFase, avaliarFase, definirPrazoFase, definirDescricaoFase } from "./FasesController.js";
-import { solicitarCancelamento, responderCancelamento, retirarCancelamento } from "./CancelamentoController.js";
+import { visualizarFases, enviarArquivoFase, removerArquivoFase, comentarFase, removerComentarioFase, editarComentarioFase, avaliarFase, definirPrazoFase, definirDescricaoFase, criarAtividadeFase, editarAtividadeFase, concluirAtividadeFase, removerAtividadeFase, responderAtividadeFase, enviarArquivoAtividadeFase, removerArquivoAtividadeFase } from "./FasesController.js";
+import { solicitarCancelamento, cancelarOrientacao, responderCancelamento, retirarCancelamento } from "./CancelamentoController.js";
 import { gerarConvite } from "./ConviteController.js";
 import { gerarTokenVideochamada, encerrarVideochamada, gerarTokenVideochamadaPublico, criarReuniao, entrarReuniao, agendarReuniao, encerrarReuniao } from "./VideochamadaController.js";
 import { makeUpload } from "../shared/Multer.js";
@@ -10,7 +10,7 @@ const router = express.Router ();
 
 const uploadFase = makeUpload ({
     randomizeFilename: true,
-    limits: { fileSize: 30 * 1024 * 1024 }, // 30MB
+    limits: { fileSize: 30 * 1024 * 1024 },
     fileFilter: function (req, file, cb) {
         if (file.mimetype === 'application/pdf') {
             cb (null, true);
@@ -30,6 +30,7 @@ router.get ("/historico", historico);
 router.put ("/marcarNotificacoesVistas", marcarNotificacoesVistas);
 router.put ("/:id/visualizar", visualizarFases);
 router.post ("/:id/solicitarCancelamento", solicitarCancelamento);
+router.post ("/:id/cancelar", cancelarOrientacao);
 router.put ("/:id/responderCancelamento", responderCancelamento);
 router.put ("/:id/retirarCancelamento", retirarCancelamento);
 router.put ("/:id/concluir", concluirOrientacao);
@@ -41,6 +42,13 @@ router.delete ("/:id/fases/:faseIndex/comentario/:comentarioId", removerComentar
 router.put ("/:id/fases/:faseIndex/avaliar", avaliarFase);
 router.put ("/:id/fases/:faseIndex/prazo", definirPrazoFase);
 router.put ("/:id/fases/:faseIndex/descricao", definirDescricaoFase);
+router.post ("/:id/fases/:faseIndex/atividade", criarAtividadeFase);
+router.put ("/:id/fases/:faseIndex/atividade/:atividadeId", editarAtividadeFase);
+router.put ("/:id/fases/:faseIndex/atividade/:atividadeId/concluir", concluirAtividadeFase);
+router.delete ("/:id/fases/:faseIndex/atividade/:atividadeId", removerAtividadeFase);
+router.put ("/:id/fases/:faseIndex/atividade/:atividadeId/resposta", responderAtividadeFase);
+router.post ("/:id/fases/:faseIndex/atividade/:atividadeId/arquivo", uploadFase.single ('arquivo'), enviarArquivoAtividadeFase);
+router.delete ("/:id/fases/:faseIndex/atividade/:atividadeId/arquivo/:arquivoId", removerArquivoAtividadeFase);
 router.post ("/:id/videochamada/token", gerarTokenVideochamada);
 router.put ("/:id/videochamada/encerrar", encerrarVideochamada);
 router.post ("/:id/videochamada/token/publico", gerarTokenVideochamadaPublico);

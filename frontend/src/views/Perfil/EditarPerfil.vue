@@ -122,15 +122,6 @@
                             </option>
                         </select>
                     </div>
-                    <!-- <Campo 
-                        v-model="form.instituicao" 
-                        label="Instituição de ensino" 
-                        id="instituicao" 
-                        type="text"
-                        :maxLength="400"
-                        :opcional="false"
-                         placeholder="ex.: Universidade Federal do Pará"
-                    /> -->
 
                     <div class="flex flex-col gap-[4px] ">
                         <div class="flex items-center gap-[4px]">
@@ -356,7 +347,7 @@ function start () {
 
 function handleFileUpload (event) {
     const file = event.target.files[0];
-    if (file && file.size > 10 * 1024 * 1024) { // Limite de 10MB
+    if (file && file.size > 10 * 1024 * 1024) {
         return popupInfo ().warning ('Imagem muito grande. Limite de 10MB.');
     }
     if (file && !file.type.startsWith ('image/')) {

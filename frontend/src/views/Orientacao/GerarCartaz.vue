@@ -242,9 +242,6 @@ const participanteBanca = reactive({
 })
 const editandoParticipante = ref(-1);
 
-// ponytail: o aluno define o tema na fase de Pré-defesa (editável até a
-// Versão final); se o professor ainda não digitou um tema aqui, puxa de lá
-// pra não retrabalhar.
 if (!props.form.tema?.trim()) {
     const temaDoAluno = props.form.fases?.find((f) => f.nome === 'Pré-defesa')?.descricao;
     if (temaDoAluno?.trim()) props.form.tema = temaDoAluno;
@@ -309,11 +306,7 @@ async function gerarConvite(){
     }
 
     isLoading.changeStateTrue()
-    // a partir daqui a sala de defesa é definitiva - o botão de reunião do
-    // Acompanhamento vira "Sala de defesa" e para de trocar de sala.
     props.form.cartazGerado = true;
-    // ponytail: gerar o cartaz precisa salvar antes — senão a defesa fica
-    // com data/tema atualizados só no PDF, sem aparecer na vitrine pública.
     const salvouAntes = await api.put(`/orientacao/editar`, props.form)
         .then(() => true)
         .catch((e) => {

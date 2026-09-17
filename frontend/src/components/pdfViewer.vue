@@ -58,10 +58,6 @@ export default {
     window.removeEventListener("resize", this.handleResize);
     if (this.zoomTimer) clearTimeout(this.zoomTimer);
     if (this.resizeTimer) clearTimeout(this.resizeTimer);
-    // ponytail: uma exceção aqui (destroy() falhando) travava o unmount do
-    // componente inteiro no meio do caminho - o "voltar" ficava clicando em
-    // uma tela que o Vue nunca terminava de trocar. É só limpeza, não pode
-    // derrubar a troca de tela se der errado.
     try {
       this.pdfDoc?.destroy?.();
     } catch (err) {
@@ -74,9 +70,6 @@ export default {
     },
     zoomLevel(newZoom, oldZoom) {
       if (!this.pdfDoc || !this.isMounted || newZoom === oldZoom) return;
-      // ponytail: o slider de zoom dispara "input" a cada tick do arraste -
-      // sem debounce, cada tick re-renderiza todas as páginas em canvas e
-      // trava a UI enquanto a pessoa arrasta.
       if (this.zoomTimer) clearTimeout(this.zoomTimer);
       this.zoomTimer = setTimeout(() => this.rerenderAllPages(), 150);
     },
@@ -131,28 +124,22 @@ export default {
       }
 
       try {
-        // Calcula a largura disponível
         const containerWidth = container.clientWidth - 48;
 
-        // Largura base máxima de 1000px para não ficar gigante
         let baseWidth = Math.min(containerWidth, 1000);
 
-        // APLICA O ZOOM NA RENDERIZAÇÃO (qualidade máxima)
         const scaledWidth = baseWidth * this.zoomLevel;
 
         const originalViewport = page.getViewport({ scale: 1 });
         const scale = scaledWidth / originalViewport.width;
         const viewport = page.getViewport({ scale: scale });
 
-        // Define o tamanho REAL do canvas (alta resolução)
         canvas.width = viewport.width;
         canvas.height = viewport.height;
 
-        // Remove estilos CSS que possam distorcer
         canvas.style.width = `${viewport.width}px`;
         canvas.style.height = `${viewport.height}px`;
 
-        // Renderiza com alta qualidade
         const context = canvas.getContext("2d");
         context.imageSmoothingEnabled = true;
         context.imageSmoothingQuality = "high";
@@ -169,7 +156,6 @@ export default {
       this.isRendering = true;
 
       try {
-        // Incrementa a chave para forçar re-renderização dos canvases
         this.renderKey++;
         await this.$nextTick();
         await this.renderAllPages();
@@ -206,7 +192,6 @@ export default {
   border-radius: 0.5rem;
 }
 
-/* Scrollbar personalizada */
 .overflow-y-auto::-webkit-scrollbar {
   width: 8px;
 }

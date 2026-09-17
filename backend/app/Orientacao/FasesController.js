@@ -12,9 +12,6 @@ function formatarData (value) {
     return `${dia}/${mes}/${ano}`;
 }
 
-// ponytail: enquanto há cancelamento pendente, ações que avançam a orientação
-// ficam suspensas (checado aqui, não só escondido no front, senão dá pra
-// forçar pela API). Visualizar/responder o cancelamento continuam liberados.
 function temCancelamentoPendente (orientacao) {
     return !!orientacao.cancelamento?.solicitadoPor && !orientacao.cancelamento?.resposta?.data;
 }
@@ -280,9 +277,6 @@ async function avaliarFase (req, res) {
         const faseIndex = Number (req.params.faseIndex);
         const fase = orientacao.fases [faseIndex];
         if (!fase) return res.status (404).json ({ msg: 'Fase não encontrada.' });
-        if (fase.arquivos.length === 0) {
-            return res.status (400).json ({ msg: 'O aluno ainda não enviou nenhum arquivo nesta fase.' });
-        }
         fase.situacao = 'aprovada';
         fase.aprovadaEm = new Date ();
         if (req.body.texto?.trim ()) {
@@ -337,4 +331,238 @@ async function definirPrazoFase (req, res) {
     }
 }
 
-export { visualizarFases, enviarArquivoFase, removerArquivoFase, comentarFase, removerComentarioFase, editarComentarioFase, avaliarFase, definirPrazoFase, definirDescricaoFase, temCancelamentoPendente, MSG_CANCELAMENTO_PENDENTE };
+async function criarAtividadeFase (req, res) {
+    try {
+        const token = req.headers.authorization;
+        const {userID, userTipo} = jwt.verify (token, process.env.JWT_SECRET, (err, usuario) => {
+            if (err) return false;
+            return {userID: usuario._id, userTipo: usuario.tipo};
+        });
+        if (!userID) return res.status (400);
+        const orientacao = await Model.findOne ({ ativo: true, _id: req.params.id }).populate ('aluno', 'email');
+        if (!orientacao) return res.status (404).json ({ msg: 'Orientação não encontrada.' });
+        if (temCancelamentoPendente (orientacao)) return res.status (400).json ({ msg: MSG_CANCELAMENTO_PENDENTE });
+        if (userTipo !== 'professor' || String (orientacao.professor) !== String (userID)) {
+            return res.status (403).json ({ msg: 'Apenas o orientador desta orientação pode criar atividades.' });
+        }
+        if (!req.body.titulo?.trim ()) return res.status (400).json ({ msg: 'Escreva um título para a atividade.' });
+        const tipo = req.body.tipo === 'arquivo' ? 'arquivo' : 'texto';
+        const fase = orientacao.fases [Number (req.params.faseIndex)];
+        if (!fase) return res.status (404).json ({ msg: 'Fase não encontrada.' });
+        fase.atividades.push ({ titulo: req.body.titulo.trim (), tipo, prazo: req.body.prazo || null });
+        await orientacao.save ();
+        if (orientacao.aluno?.email) {
+            sendEmail (
+                orientacao.aluno.email,
+                'SOTCC - Nova atividade',
+                `<h3>Uma nova atividade foi criada na fase "${fase.nome}": ${req.body.titulo.trim ()}</h3><a href='${process.env.HOST_ROOT}/ui/login'>Clique aqui para entrar no sistema.</a>`,
+            );
+        }
+        res.status (200).json ({ msg: 'Atividade criada.' });
+    } catch (error) {
+        console.log (error);
+        return res.status (400).json ({ msg: 'Erro ao criar atividade.' });
+    }
+}
+
+async function editarAtividadeFase (req, res) {
+    try {
+        const token = req.headers.authorization;
+        const {userID, userTipo} = jwt.verify (token, process.env.JWT_SECRET, (err, usuario) => {
+            if (err) return false;
+            return {userID: usuario._id, userTipo: usuario.tipo};
+        });
+        if (!userID) return res.status (400);
+        const orientacao = await Model.findOne ({ ativo: true, _id: req.params.id });
+        if (!orientacao) return res.status (404).json ({ msg: 'Orientação não encontrada.' });
+        if (temCancelamentoPendente (orientacao)) return res.status (400).json ({ msg: MSG_CANCELAMENTO_PENDENTE });
+        if (userTipo !== 'professor' || String (orientacao.professor) !== String (userID)) {
+            return res.status (403).json ({ msg: 'Apenas o orientador desta orientação pode editar atividades.' });
+        }
+        if (!req.body.titulo?.trim ()) return res.status (400).json ({ msg: 'Escreva um título para a atividade.' });
+        const fase = orientacao.fases [Number (req.params.faseIndex)];
+        if (!fase) return res.status (404).json ({ msg: 'Fase não encontrada.' });
+        const atividade = fase.atividades.id (req.params.atividadeId);
+        if (!atividade) return res.status (404).json ({ msg: 'Atividade não encontrada.' });
+        atividade.titulo = req.body.titulo.trim ();
+        atividade.prazo = req.body.prazo || null;
+        await orientacao.save ();
+        res.status (200).json ({ msg: 'Atividade atualizada.' });
+    } catch (error) {
+        console.log (error);
+        return res.status (400).json ({ msg: 'Erro ao editar atividade.' });
+    }
+}
+
+async function concluirAtividadeFase (req, res) {
+    try {
+        const token = req.headers.authorization;
+        const {userID, userTipo} = jwt.verify (token, process.env.JWT_SECRET, (err, usuario) => {
+            if (err) return false;
+            return {userID: usuario._id, userTipo: usuario.tipo};
+        });
+        if (!userID) return res.status (400);
+        const orientacao = await Model.findOne ({ ativo: true, _id: req.params.id });
+        if (!orientacao) return res.status (404).json ({ msg: 'Orientação não encontrada.' });
+        if (temCancelamentoPendente (orientacao)) return res.status (400).json ({ msg: MSG_CANCELAMENTO_PENDENTE });
+        if (userTipo !== 'professor' || String (orientacao.professor) !== String (userID)) {
+            return res.status (403).json ({ msg: 'Apenas o orientador desta orientação pode marcar atividades como concluídas.' });
+        }
+        const fase = orientacao.fases [Number (req.params.faseIndex)];
+        if (!fase) return res.status (404).json ({ msg: 'Fase não encontrada.' });
+        const atividade = fase.atividades.id (req.params.atividadeId);
+        if (!atividade) return res.status (404).json ({ msg: 'Atividade não encontrada.' });
+        atividade.concluida = !!req.body.concluida;
+        atividade.concluidaEm = atividade.concluida ? new Date () : null;
+        await orientacao.save ();
+        res.status (200).json ({ msg: atividade.concluida ? 'Atividade concluída.' : 'Atividade reaberta.' });
+    } catch (error) {
+        console.log (error);
+        return res.status (400).json ({ msg: 'Erro ao atualizar atividade.' });
+    }
+}
+
+async function removerAtividadeFase (req, res) {
+    try {
+        const token = req.headers.authorization;
+        const {userID, userTipo} = jwt.verify (token, process.env.JWT_SECRET, (err, usuario) => {
+            if (err) return false;
+            return {userID: usuario._id, userTipo: usuario.tipo};
+        });
+        if (!userID) return res.status (400);
+        const orientacao = await Model.findOne ({ ativo: true, _id: req.params.id });
+        if (!orientacao) return res.status (404).json ({ msg: 'Orientação não encontrada.' });
+        if (temCancelamentoPendente (orientacao)) return res.status (400).json ({ msg: MSG_CANCELAMENTO_PENDENTE });
+        if (userTipo !== 'professor' || String (orientacao.professor) !== String (userID)) {
+            return res.status (403).json ({ msg: 'Apenas o orientador desta orientação pode remover atividades.' });
+        }
+        const fase = orientacao.fases [Number (req.params.faseIndex)];
+        if (!fase) return res.status (404).json ({ msg: 'Fase não encontrada.' });
+        const atividade = fase.atividades.id (req.params.atividadeId);
+        if (!atividade) return res.status (404).json ({ msg: 'Atividade não encontrada.' });
+        atividade.deleteOne ();
+        await orientacao.save ();
+        res.status (200).json ({ msg: 'Atividade removida.' });
+    } catch (error) {
+        console.log (error);
+        return res.status (400).json ({ msg: 'Erro ao remover atividade.' });
+    }
+}
+
+async function responderAtividadeFase (req, res) {
+    try {
+        const token = req.headers.authorization;
+        const {userID, userTipo} = jwt.verify (token, process.env.JWT_SECRET, (err, usuario) => {
+            if (err) return false;
+            return {userID: usuario._id, userTipo: usuario.tipo};
+        });
+        if (!userID) return res.status (400);
+        const orientacao = await Model.findOne ({ ativo: true, _id: req.params.id });
+        if (!orientacao) return res.status (404).json ({ msg: 'Orientação não encontrada.' });
+        if (temCancelamentoPendente (orientacao)) return res.status (400).json ({ msg: MSG_CANCELAMENTO_PENDENTE });
+        if (userTipo !== 'aluno' || String (orientacao.aluno) !== String (userID)) {
+            return res.status (403).json ({ msg: 'Apenas o aluno desta orientação pode responder atividades.' });
+        }
+        const fase = orientacao.fases [Number (req.params.faseIndex)];
+        if (!fase) return res.status (404).json ({ msg: 'Fase não encontrada.' });
+        if (fase.situacao === 'aprovada') {
+            return res.status (400).json ({ msg: 'Fase já aprovada, não é possível responder atividades.' });
+        }
+        const atividade = fase.atividades.id (req.params.atividadeId);
+        if (!atividade) return res.status (404).json ({ msg: 'Atividade não encontrada.' });
+        if (atividade.tipo !== 'texto') return res.status (400).json ({ msg: 'Esta atividade pede o envio de um arquivo.' });
+        if (!req.body.texto?.trim ()) return res.status (400).json ({ msg: 'Escreva uma resposta.' });
+        atividade.resposta = req.body.texto.trim ();
+        atividade.concluida = true;
+        atividade.concluidaEm = new Date ();
+        await orientacao.save ();
+        res.status (200).json ({ msg: 'Resposta enviada.' });
+    } catch (error) {
+        console.log (error);
+        return res.status (400).json ({ msg: 'Erro ao enviar resposta.' });
+    }
+}
+
+async function enviarArquivoAtividadeFase (req, res) {
+    try {
+        const token = req.headers.authorization;
+        const {userID, userTipo} = jwt.verify (token, process.env.JWT_SECRET, (err, usuario) => {
+            if (err) return false;
+            return {userID: usuario._id, userTipo: usuario.tipo};
+        });
+        if (!userID) return res.status (400);
+        const orientacao = await Model.findOne ({ ativo: true, _id: req.params.id });
+        if (!orientacao) return res.status (404).json ({ msg: 'Orientação não encontrada.' });
+        if (temCancelamentoPendente (orientacao)) return res.status (400).json ({ msg: MSG_CANCELAMENTO_PENDENTE });
+        if (userTipo !== 'aluno' || String (orientacao.aluno) !== String (userID)) {
+            return res.status (403).json ({ msg: 'Apenas o aluno desta orientação pode enviar arquivos.' });
+        }
+        const fase = orientacao.fases [Number (req.params.faseIndex)];
+        if (!fase) return res.status (404).json ({ msg: 'Fase não encontrada.' });
+        if (fase.situacao === 'aprovada') {
+            return res.status (400).json ({ msg: 'Fase já aprovada, não é possível enviar arquivos.' });
+        }
+        const atividade = fase.atividades.id (req.params.atividadeId);
+        if (!atividade) return res.status (404).json ({ msg: 'Atividade não encontrada.' });
+        if (atividade.tipo !== 'arquivo') return res.status (400).json ({ msg: 'Esta atividade pede uma resposta em texto.' });
+        if (!req.file) return res.status (400).json ({ msg: 'Nenhum arquivo enviado.' });
+        atividade.arquivos.push ({
+            originalname: req.file.originalname,
+            filename: req.file.filename,
+            path: req.file.path,
+            size: req.file.size,
+        });
+        atividade.concluida = true;
+        atividade.concluidaEm = new Date ();
+        await orientacao.save ();
+        res.status (200).json ({ msg: 'Arquivo enviado.' });
+    } catch (error) {
+        console.log (error);
+        return res.status (400).json ({ msg: 'Erro ao enviar arquivo.' });
+    }
+}
+
+async function removerArquivoAtividadeFase (req, res) {
+    try {
+        const token = req.headers.authorization;
+        const {userID, userTipo} = jwt.verify (token, process.env.JWT_SECRET, (err, usuario) => {
+            if (err) return false;
+            return {userID: usuario._id, userTipo: usuario.tipo};
+        });
+        if (!userID) return res.status (400);
+        const orientacao = await Model.findOne ({ ativo: true, _id: req.params.id });
+        if (!orientacao) return res.status (404).json ({ msg: 'Orientação não encontrada.' });
+        if (temCancelamentoPendente (orientacao)) return res.status (400).json ({ msg: MSG_CANCELAMENTO_PENDENTE });
+        if (userTipo !== 'aluno' || String (orientacao.aluno) !== String (userID)) {
+            return res.status (403).json ({ msg: 'Apenas o aluno desta orientação pode remover arquivos.' });
+        }
+        const fase = orientacao.fases [Number (req.params.faseIndex)];
+        if (!fase) return res.status (404).json ({ msg: 'Fase não encontrada.' });
+        if (fase.situacao === 'aprovada') {
+            return res.status (400).json ({ msg: 'Fase já aprovada, não é possível remover arquivos.' });
+        }
+        const atividade = fase.atividades.id (req.params.atividadeId);
+        if (!atividade) return res.status (404).json ({ msg: 'Atividade não encontrada.' });
+        const arquivo = atividade.arquivos.id (req.params.arquivoId);
+        if (!arquivo) return res.status (404).json ({ msg: 'Arquivo não encontrado.' });
+        const ultimoArquivo = atividade.arquivos [atividade.arquivos.length - 1];
+        if (String (ultimoArquivo._id) !== String (arquivo._id)) {
+            return res.status (400).json ({ msg: 'Só é possível remover o último arquivo enviado.' });
+        }
+        if (arquivo.path && fs.existsSync (arquivo.path)) {
+            fs.unlinkSync (arquivo.path);
+        }
+        arquivo.deleteOne ();
+        if (atividade.arquivos.length === 0) {
+            atividade.concluida = false;
+            atividade.concluidaEm = null;
+        }
+        await orientacao.save ();
+        res.status (200).json ({ msg: 'Arquivo removido.' });
+    } catch (error) {
+        console.log (error);
+        return res.status (400).json ({ msg: 'Erro ao remover arquivo.' });
+    }
+}
+
+export { visualizarFases, enviarArquivoFase, removerArquivoFase, comentarFase, removerComentarioFase, editarComentarioFase, avaliarFase, definirPrazoFase, definirDescricaoFase, criarAtividadeFase, editarAtividadeFase, concluirAtividadeFase, removerAtividadeFase, responderAtividadeFase, enviarArquivoAtividadeFase, removerArquivoAtividadeFase, temCancelamentoPendente, MSG_CANCELAMENTO_PENDENTE };

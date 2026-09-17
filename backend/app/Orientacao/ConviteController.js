@@ -16,7 +16,7 @@ async function gerarConvite (req, res) {
         doc.image (pathFundo, 0, 0, { width: doc.page.width, height: doc.page.height });
         doc.moveDown ();
         for (let i = 0; i < 15; i ++) {
-            doc.moveDown ();  // Para espaçamento
+            doc.moveDown ();
         }
         doc.fontSize (16).text ('UNIVERSIDADE FEDERAL DO PARÁ', { align: 'center', lineGap: 8 });
         doc.text ('CAMPUS UNIVERSITÁRIO DE TUCURUÍ', { align: 'center', lineGap: 8 });

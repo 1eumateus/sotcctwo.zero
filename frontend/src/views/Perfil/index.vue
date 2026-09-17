@@ -105,7 +105,6 @@
                     <div class="flex flex-col gap-[8px] w-full text-center justify-end h-full" v-if="form.tipo === 'professor'">
                         <hr class="" />
                         <Texto as="body">
-                            <!-- Orientando {{ orientacoes.length }} aluno(s) -->
                         </Texto>
                     </div>
                     

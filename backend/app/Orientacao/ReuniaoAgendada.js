@@ -11,8 +11,6 @@ function formatarDataHora (data) {
     return `${dia}/${mes}/${ano} às ${hora}:${min}`;
 }
 
-// verifica a cada minuto se alguma reunião marcada já chegou na hora - liga
-// "ativa" sozinho, sem precisar do professor clicar em nada.
 async function abrirReunioesAgendadas () {
     const agora = new Date ();
     const orientacoes = await Model.find ({

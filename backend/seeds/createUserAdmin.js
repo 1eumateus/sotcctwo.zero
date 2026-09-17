@@ -1,4 +1,3 @@
-// createUserAdmin.js
 
 import Usuario from "../app/Usuario/Model.js";
 import bcrypt from "bcryptjs";

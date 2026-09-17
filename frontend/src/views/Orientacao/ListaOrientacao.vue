@@ -91,13 +91,6 @@
                             >
                                 Cancelamento solicitado
                             </router-link>
-                            <router-link
-                                :to="`/ui/acompanhamento/${item._id}`"
-                                v-else-if="item.situacao === 'confirmado' && item.cancelamento?.solicitadoPor === 'professor' && !item.cancelamento?.resposta?.data"
-                                class="cursor-pointer text-[11px] font-bold px-[10px] py-[6px] rounded-md bg-orange-100 text-orange-700 hover:bg-orange-200"
-                            >
-                                Orientador solicitou cancelamento
-                            </router-link>
                             <button
                                 type="button"
                                 :onClick="()=> cancelarPedido(item)"
@@ -327,7 +320,7 @@ const props = defineProps({
     },
     filtroExterno: {
         type: String,
-        default: null, // null | 'confirmado' | 'concluido' | 'todas' — vem dos cards da Home
+        default: null,
     },
 });
 
@@ -399,15 +392,11 @@ function historicoData (item) {
 }
 
 const mostrarHistorico = ref (false);
-// avisa a Home pra esconder "Meus alunos"/"Professores disponíveis" enquanto
-// o histórico estiver em foco — não faz sentido mostrar as duas coisas juntas.
 watch (mostrarHistorico, (valor) => emits ('historico', valor), { immediate: true });
 const historicoItens = reactive ([]);
 
 const linhasExibidas = computed(() => {
     if (props.usuario?.tipo === 'professor') {
-        // mais antiga primeiro — quem pediu orientação há mais tempo é
-        // respondido antes, pra ninguém ser furado por um pedido mais novo.
         return orientacoes
             .filter((item) => item.situacao === 'pendente')
             .sort((a, b) => new Date(a.dataCriacao) - new Date(b.dataCriacao));
@@ -416,8 +405,6 @@ const linhasExibidas = computed(() => {
         return orientacoes.filter((item) => item.situacao === 'confirmado');
     }
     if (props.filtroExterno === 'todas') {
-        // todos os professores que o aluno já solicitou — exceto concluídas,
-        // que têm o próprio card/botão dedicado.
         return [...orientacoes, ...historicoItens.filter((item) => item.situacao !== 'concluido')]
             .sort((a, b) => new Date(b.dataCriacao) - new Date(a.dataCriacao));
     }
@@ -466,23 +453,14 @@ async function listarHistorico () {
 
 async function toggleHistorico () {
     mostrarHistorico.value = !mostrarHistorico.value;
-    // botão manual — avisa a Home pra soltar o card que estava marcado
-    // (senão o card fica destacado sem corresponder ao que está na tela).
     emits ('filtroManual');
     if (mostrarHistorico.value && historicoItens.length === 0) {
         await listarHistorico ();
     }
 }
 
-// clique nos cards "solicitações"/"pendentes"/"concluídas"/"em dia"/"atrasados"
-// da Home pilota essa tela por fora. mostrarHistorico deriva sempre do valor
-// atual (nunca fica "preso" de um clique anterior) - só 'concluido' mostra
-// histórico, qualquer outro valor (inclusive null, do "em dia"/"atrasados"
-// do professor) volta pra visão normal.
 watch (() => props.filtroExterno, async (valor) => {
     mostrarHistorico.value = valor === 'concluido';
-    // 'todas' junta ativas + histórico (menos concluídas) na mesma lista,
-    // então precisa dos dados do histórico mesmo sem mostrar a aba dele.
     if ((valor === 'concluido' || valor === 'todas') && historicoItens.length === 0) {
         await listarHistorico ();
     }

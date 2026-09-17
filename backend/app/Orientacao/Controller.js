@@ -4,9 +4,6 @@ import mongoose from "mongoose";
 const { ObjectId } = mongoose.Types;
 import { sendEmail } from '../shared/Mailer.js';
 
-// clicar no sino marca toda a ATIVIDADE (arquivo/comentário/prazo/etc) como
-// vista de uma vez - solicitação e cancelamento pendentes continuam contando
-// (não são "lidas", precisam de ação de verdade, não só abrir o sino).
 async function marcarNotificacoesVistas (req, res) {
     try {
         const token = req.headers.authorization;
@@ -107,11 +104,8 @@ async function listar (req, res) {
             const faseEmAndamentoIndex = (o.fases || []).findIndex ((f) => f.situacao !== 'aprovada');
             const faseEmAndamento = faseEmAndamentoIndex === -1 ? null : o.fases [faseEmAndamentoIndex];
             o.faseAtual = faseEmAndamento ? { nome: faseEmAndamento.nome, prazo: faseEmAndamento.prazo } : null;
-            // mesma regra do CancelamentoController: só até a fase de Desenvolvimento (índice <= 1).
             const indiceFase = faseEmAndamentoIndex === -1 ? (o.fases?.length || 0) : faseEmAndamentoIndex;
             o.podeSolicitarCancelamento = indiceFase <= 1;
-            // rascunho do tema (definido pelo aluno na Pré-defesa) — mostra na
-            // vitrine/tela de orientações mesmo antes do professor gerar o cartaz.
             o.temaRascunho = (o.fases || []).find ((f) => f.nome === 'Pré-defesa')?.descricao || '';
             delete o.fases;
             delete o.ultimaVisualizacaoAluno;
@@ -299,8 +293,6 @@ async function editar (req, res) {
         editar.link = req.body.link;
         editar.presencial = req.body.presencial;
         editar.local = req.body.local;
-        // uma via só: nunca desliga de novo, mesmo que "editar" seja chamado
-        // sem esse campo (ex.: "Salvar alterações" do cartaz não manda ele).
         if (req.body.cartazGerado) editar.cartazGerado = true;
         await editar.save ();
         res.status (200).json ({ msg: "Orientação editada com sucesso." });
@@ -361,8 +353,6 @@ async function alterarSituacao (req, res) {
         }
         await orientacao.save ();
         if (userTipo === 'professor' && req.body.situacao === 'confirmado') {
-            // o aluno pode ter solicitado orientação a vários professores ao mesmo
-            // tempo — ao ser aceito por um, as outras solicitações pendentes caem.
             await Model.updateMany (
                 { ativo: true, aluno: orientacao.aluno, situacao: 'pendente', _id: { $ne: orientacao._id } },
                 { $set: { ativo: false, situacao: 'cancelado', resposta: 'Cancelado automaticamente: você foi aceito por outro professor.' } }

@@ -35,13 +35,6 @@
                 </template>
                 <template #body>
                     <div class="relative">
-                        <!--
-                          ponytail: abaixo de sm, "right-0" era relativo ao próprio
-                          sininho (não à tela) - como ele não fica na borda direita
-                          de verdade (o menu do usuário fica depois dele), o painel
-                          de 280px vazava pra fora da tela à esquerda em celular.
-                          Fixo na viewport + largura por vw resolve nas duas pontas.
-                        -->
                         <div class="fixed sm:absolute z-40 top-16 sm:top-4 left-2 right-2 sm:left-auto sm:right-0 sm:w-[280px] max-h-[70vh] overflow-y-auto bg-principal rounded-md border border-terciaria flex flex-col text-left">
                             <div class="flex items-center justify-between gap-[8px] px-[14px] py-[8px] border-b border-terciaria">
                                 Notificações
@@ -246,17 +239,10 @@ async function buscarNotificacoes() {
     await api.get('/orientacao/')
         .then((res) => {
             const itens = res.data?.item || [];
-            // a mensagem fica na lista pra sempre (é um histórico) - lida ou
-            // não só muda o estilo (apagado x negrito). O que precisa sumir ao
-            // clicar no sino é só o número/contador, não o item da lista.
             const comAtividade = itens.filter((item) => item.situacao === 'confirmado' && item.notificacaoDetalhe);
             const pendentes = props.user.tipo === 'professor'
                 ? itens.filter((item) => item.situacao === 'pendente').map((item) => ({ ...item, solicitacaoPendente: true }))
                 : [];
-            // ponytail: simétrico pros dois lados - quem recebeu o pedido vê como
-            // ação necessária, quem pediu vê como "aguardando resposta". Já
-            // respondido (resposta.data setado) não conta mais como pendente -
-            // vira atividade normal via notificacaoDetalhe (cancelamento-resposta).
             const semResposta = (item) => !item.cancelamento?.resposta?.data;
             const cancelamentos = itens
                 .filter((item) => item.cancelamento?.solicitadoPor && item.cancelamento.solicitadoPor !== props.user.tipo && semResposta(item))
@@ -269,20 +255,13 @@ async function buscarNotificacoes() {
         .catch(() => {});
 }
 
-// chamado pelo botão "Marcar todas como lidas" - solicitação/cancelamento
-// pendente continuam contando, porque aquilo precisa de ação de verdade.
 async function marcarTodasNotificacoesVistas() {
     if (props.user.tipo === 'admin' || naoLidasCount.value === 0) return;
     await api.put('/orientacao/marcarNotificacoesVistas').catch(() => {});
     await buscarNotificacoes();
-    // avisa quem mais escuta esse evento (ex.: o sininho de cada aluno na
-    // Home) que a leitura mudou - senão só o painel do sino atualiza.
     window.dispatchEvent(new Event('sotcc:notificacao-vista'));
 }
 
-// clicar num item já leva pra tela dele, que marca como vista de verdade
-// (Acompanhamento.vue chama /visualizar sozinho ao abrir) - isso aqui só
-// atualiza o item na hora, pra não ficar em destaque até o próximo poll.
 function marcarItemComoLido(item) {
     if (item.solicitacaoPendente || item.cancelamentoPendente) return;
     item.notificacaoLida = true;
@@ -290,10 +269,6 @@ function marcarItemComoLido(item) {
 
 watch(() => route.fullPath, buscarNotificacoes);
 
-// ponytail: visualizar uma orientação marca ela como lida no servidor, mas
-// esse componente não sabe quando isso terminou (rota já muda antes do PUT
-// responder). Escuta o evento pra tirar o ponto vermelho na hora, sem F5;
-// o poll de 20s cobre a atividade nova de quem não navegou.
 let pollInterval = null;
 onMounted(() => {
     buscarNotificacoes();

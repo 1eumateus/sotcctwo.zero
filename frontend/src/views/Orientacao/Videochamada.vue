@@ -68,7 +68,7 @@ const props = defineProps({
     },
     modo: {
         type: String,
-        default: 'defesa', // 'defesa' (sala fixa, atrelada ao cartaz) | 'reuniao' (sala nova a cada criação)
+        default: 'defesa',
     },
 });
 
@@ -80,7 +80,6 @@ const jaas = reactive({ token: '', roomName: '', appId: '' });
 
 function rotaEntrar() {
     if (props.modo !== 'reuniao') return `/orientacao/${props.orientacaoId}/videochamada/token`;
-    // reunião: o professor sempre cria uma sala nova, o aluno só entra na que já está ativa.
     return props.ehProfessor
         ? `/orientacao/${props.orientacaoId}/reuniao/criar`
         : `/orientacao/${props.orientacaoId}/reuniao/entrar`;

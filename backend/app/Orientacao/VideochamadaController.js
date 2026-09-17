@@ -5,7 +5,7 @@ import Usuario from "../Usuario/Model.js";
 import { temCancelamentoPendente, MSG_CANCELAMENTO_PENDENTE } from "./FasesController.js";
 import { sendEmail } from "../shared/Mailer.js";
 
-const TOKEN_TTL_SEGUNDOS = 3 * 60 * 60; // 3 horas
+const TOKEN_TTL_SEGUNDOS = 3 * 60 * 60;
 
 function assinarTokenJaaS (roomName, { id, name, email, moderator }) {
     const privateKey = (process.env.JAAS_PRIVATE_KEY || '').replace (/\\n/g, '\n');
@@ -51,9 +51,6 @@ async function gerarTokenVideochamada (req, res) {
         if (orientacao.situacao !== 'confirmado') {
             return res.status (400).json ({ msg: 'A orientação precisa estar confirmada para iniciar uma videochamada.' });
         }
-        // depois do cartaz gerado a sala é fixa e pública (o link já está
-        // divulgado) - o aluno não precisa mais esperar o professor "abrir"
-        // a chamada, só antes disso (defesa marcada sem cartaz ainda).
         if (souAluno && !orientacao.cartazGerado && !orientacao.chamadaAoVivo?.ativa) {
             return res.status (400).json ({ msg: 'Aguarde o professor iniciar a videochamada.' });
         }
@@ -145,8 +142,6 @@ async function criarReuniao (req, res) {
         }
         const usuario = await Usuario.findOne ({ _id: userID });
         if (!usuario) return res.status (404).json ({ msg: 'Usuário não encontrado.' });
-        // sala nova a cada clique (id aleatório) - diferente da sala da defesa,
-        // que é fixa e não pode mudar (fica no cartaz).
         const salaId = uuidv4 ();
         orientacao.reuniao = { salaId, ativa: true, iniciadaEm: new Date () };
         await orientacao.save ();
@@ -221,8 +216,6 @@ async function agendarReuniao (req, res) {
         if (isNaN (agendadaPara) || agendadaPara <= new Date ()) {
             return res.status (400).json ({ msg: 'A data da reunião precisa ser no futuro.' });
         }
-        // sala já nasce com id definitivo - o job (ReuniaoAgendada.js) só liga
-        // "ativa" na hora certa, não muda mais nada na sala.
         const salaId = uuidv4 ();
         orientacao.reuniao = { salaId, ativa: false, iniciadaEm: null, agendadaPara };
         await orientacao.save ();

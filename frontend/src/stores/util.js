@@ -1,5 +1,4 @@
 import Swal from "sweetalert2";
-// toast
 import { useToast } from "vue-toast-notification";
 import "vue-toast-notification/dist/theme-sugar.css";
 
@@ -36,8 +35,6 @@ function popupInfo() {
   };
 }
 
-// toast + notificação nativa do navegador (se autorizada) - usado em toda
-// tela que precisa avisar de algo sem a pessoa precisar recarregar a página.
 export function notificarNavegador(titulo, texto) {
   popupInfo().info(texto);
   if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
@@ -99,8 +96,6 @@ export const formatMask = {
       return `${dia}/${mes}/${ano}`;
     },
     viewDataHora(value) {
-      // ponytail: horário local (não UTC como viewDate) porque aqui é um
-      // instante real (Date.now()), não uma data "de calendário" tipo prazo.
       if (!value) return '';
       const data = new Date(value);
       const dia = String(data.getDate()).padStart(2, '0');

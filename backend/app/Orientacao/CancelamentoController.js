@@ -2,13 +2,7 @@ import Model from "./Model.js";
 import jwt from "jsonwebtoken";
 import { sendEmail } from '../shared/Mailer.js';
 
-// ponytail: "pendente" = tem solicitadoPor mas ainda não tem resposta. Depois
-// de respondido, o cancelamento fica no documento só pra exibir o aviso por
-// 24h (o front decide sumir; aqui só cuidamos de não travar novas ações).
 function cancelamentoPendente (orientacao) {
-    // Mongoose instancia o subobjeto "resposta" com os campos em null por
-    // padrão (não fica undefined), então checar a data é que diz se já
-    // houve resposta de verdade.
     return !!orientacao.cancelamento?.solicitadoPor && !orientacao.cancelamento?.resposta?.data;
 }
 
@@ -20,15 +14,17 @@ async function solicitarCancelamento (req, res) {
             return {userID: usuario._id, userTipo: usuario.tipo};
         });
         if (!userID) return res.status (400);
+        if (userTipo !== 'aluno') {
+            return res.status (403).json ({ msg: 'Apenas o aluno solicita cancelamento. O professor pode cancelar diretamente.' });
+        }
         if (!req.body.motivo?.trim ()) {
             return res.status (400).json ({ msg: 'Justifique o motivo do cancelamento.' });
         }
-        const orientacao = await Model.findOne ({ ativo: true, situacao: 'confirmado', _id: req.params.id });
+        const orientacao = await Model.findOne ({ ativo: true, situacao: 'confirmado', _id: req.params.id }).populate ('professor', 'email');
         if (!orientacao) {
             return res.status (404).json ({ msg: 'Orientação não encontrada.' });
         }
-        const dono = userTipo === 'aluno' ? orientacao.aluno : orientacao.professor;
-        if (userTipo === 'admin' || String (dono) !== String (userID)) {
+        if (String (orientacao.aluno) !== String (userID)) {
             return res.status (403).json ({ msg: 'Você não faz parte desta orientação.' });
         }
         if (cancelamentoPendente (orientacao)) {
@@ -39,16 +35,69 @@ async function solicitarCancelamento (req, res) {
         if (faseAtual > 1) {
             return res.status (400).json ({ msg: 'Cancelamento disponível apenas até a fase de Desenvolvimento.' });
         }
+        const motivo = req.body.motivo.trim ();
         orientacao.cancelamento = {
-            solicitadoPor: userTipo,
-            motivo: req.body.motivo.trim (),
+            solicitadoPor: 'aluno',
+            motivo,
             data: new Date (),
         };
         await orientacao.save ();
+        if (orientacao.professor?.email) {
+            sendEmail (
+                orientacao.professor.email,
+                'SOTCC - Solicitação de cancelamento',
+                `<h3>O aluno solicitou o cancelamento da orientação.</h3><p>Motivo: ${motivo}</p><a href='${process.env.HOST_ROOT}/ui/login'>Clique aqui para entrar no sistema.</a>`,
+            );
+        }
         res.status (200).json ({ msg: 'Solicitação de cancelamento enviada.' });
     } catch (error) {
         console.log (error);
         return res.status (400).json ({ msg: 'Erro ao solicitar cancelamento.' });
+    }
+}
+
+async function cancelarOrientacao (req, res) {
+    try {
+        const token = req.headers.authorization;
+        const {userID, userTipo} = jwt.verify (token, process.env.JWT_SECRET, (err, usuario) => {
+            if (err) return false;
+            return {userID: usuario._id, userTipo: usuario.tipo};
+        });
+        if (!userID) return res.status (400);
+        if (userTipo !== 'professor') {
+            return res.status (403).json ({ msg: 'Apenas o professor cancela a orientação diretamente.' });
+        }
+        if (!req.body.motivo?.trim ()) {
+            return res.status (400).json ({ msg: 'Justifique o motivo do cancelamento.' });
+        }
+        const orientacao = await Model.findOne ({ ativo: true, situacao: 'confirmado', _id: req.params.id }).populate ('aluno', 'email');
+        if (!orientacao) {
+            return res.status (404).json ({ msg: 'Orientação não encontrada.' });
+        }
+        if (String (orientacao.professor) !== String (userID)) {
+            return res.status (403).json ({ msg: 'Você não faz parte desta orientação.' });
+        }
+        const motivo = req.body.motivo.trim ();
+        orientacao.cancelamento = {
+            solicitadoPor: 'professor',
+            motivo,
+            data: new Date (),
+            resposta: { aceito: true, data: new Date () },
+        };
+        orientacao.ativo = false;
+        orientacao.situacao = 'cancelado';
+        await orientacao.save ();
+        if (orientacao.aluno?.email) {
+            sendEmail (
+                orientacao.aluno.email,
+                'SOTCC - Orientação cancelada',
+                `<h3>Seu orientador cancelou a orientação.</h3><p>Motivo: ${motivo}</p><a href='${process.env.HOST_ROOT}/ui/login'>Clique aqui para entrar no sistema.</a>`,
+            );
+        }
+        res.status (200).json ({ msg: 'Orientação cancelada.' });
+    } catch (error) {
+        console.log (error);
+        return res.status (400).json ({ msg: 'Erro ao cancelar orientação.' });
     }
 }
 
@@ -133,4 +182,4 @@ async function retirarCancelamento (req, res) {
     }
 }
 
-export { solicitarCancelamento, responderCancelamento, retirarCancelamento };
+export { solicitarCancelamento, cancelarOrientacao, responderCancelamento, retirarCancelamento };

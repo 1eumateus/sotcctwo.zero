@@ -539,22 +539,17 @@ function abrirSalaDefesa(o) {
 }
 
 function ehHojeData(data) {
-    // mesma base de comparação usada no acompanhamento/vitrine pública:
-    // compara os componentes em UTC dos dois lados.
     if (!data) return false;
     return formatMask.date(data) === formatMask.date(new Date());
 }
 
 const areaSelecionada = ref('');
 const busca = ref('');
-const filtroStatus = ref(null); // null | 'em-dia' | 'atrasado' (só professor)
-const filtroHistorico = ref(null); // null | 'confirmado' | 'concluido' — pilota o ListaOrientacao pra qualquer um dos dois papéis
+const filtroStatus = ref(null);
+const filtroHistorico = ref(null);
 const listaOrientacaoRef = ref(null);
-const verHistorico = ref(false); // true quando o ListaOrientacao está mostrando o histórico (esconde as grades abaixo)
+const verHistorico = ref(false);
 
-// os três cards (em dia / atrasados / concluídas) são um filtro só: clicar
-// num liga e desliga os outros, senão dá pra ficar com dois filtros
-// diferentes ativos ao mesmo tempo em painéis diferentes sem indicação clara.
 function toggleFiltroHistorico(valor) {
     filtroStatus.value = null;
     filtroHistorico.value = filtroHistorico.value === valor ? null : valor;
@@ -563,10 +558,6 @@ function toggleFiltroHistorico(valor) {
 function toggleFiltroStatus(valor) {
     filtroHistorico.value = null;
     filtroStatus.value = filtroStatus.value === valor ? null : valor;
-    // "em dia"/"atrasados" escondem o ListaOrientacao (ele vira a grade de
-    // alunos no lugar dele) - sem isso, se verHistorico tivesse ficado true
-    // de uma visita anterior a "concluídos", o componente que zeraria esse
-    // estado nem chega a existir, e a grade de alunos também some.
     verHistorico.value = false;
 }
 
@@ -637,8 +628,6 @@ const alunosOrientadosBase = computed(() => {
             const alvo = `${o.aluno?.nome} ${o.aluno?.sobrenome} ${o.proposta || ''}`.toLowerCase();
             return alvo.includes(termo);
         })
-        // mais antigo primeiro — mesmo critério do professor pra pedidos
-        // pendentes, pra ninguém ficar "escondido" atrás de quem entrou depois.
         .sort((a, b) => new Date(a.dataCriacao) - new Date(b.dataCriacao))
         .map((o) => ({
             ...o.aluno,
@@ -651,8 +640,6 @@ const alunosOrientadosBase = computed(() => {
         }));
 });
 
-// mesma regra de atraso usada no acompanhamento: a fase atual (primeira
-// não aprovada) tem prazo definido e esse prazo já passou.
 function estaAtrasado(faseAtual) {
     if (!faseAtual?.prazo) return false;
     return new Date(faseAtual.prazo) < new Date();
@@ -675,8 +662,6 @@ const orientacoesComDefesa = computed(() =>
 
 const proximaDefesa = computed(() => orientacoesComDefesa.value[0] || null);
 
-// nomes fixos das 4 fases (Model.js), + um balde pra quem já aprovou todas
-// e está só esperando a defesa — senão esses alunos somem do gráfico.
 const NOMES_FASES = ['Proposta', 'Desenvolvimento', 'Pré-defesa', 'Versão final', 'Aguardando defesa'];
 const distribuicaoFases = computed(() => {
     const contagem = Object.fromEntries(NOMES_FASES.map((nome) => [nome, 0]));
@@ -758,8 +743,6 @@ onMounted(async()=>{
     isLoading.changeStateTrue();
     await start();
     isLoading.changeStateFalse();
-    // clicar no sino (Menu.vue) marca tudo como visto e dispara esse evento -
-    // sem isso o sininho de cada aluno aqui embaixo só atualizava sozinho.
     window.addEventListener('sotcc:notificacao-vista', listarOrientacao);
 });
 

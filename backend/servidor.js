@@ -8,6 +8,8 @@ import usuario from "./app/Usuario/Router.js";
 import orientacao from "./app/Orientacao/Router.js";
 import login from "./app/Login/Router.js";
 import lotacao from "./app/Lotacao/Router.js";
+import * as lembretePrazo from "./app/Orientacao/LembretePrazo.js";
+import * as reuniaoAgendada from "./app/Orientacao/ReuniaoAgendada.js";
 
 const __filename = fileURLToPath (import.meta.url);
 const __dirname = path.dirname (__filename);
@@ -34,4 +36,6 @@ app.use ('/', function (req, res, next) {
 })
 
 app.listen (port);
+lembretePrazo.start ();
+reuniaoAgendada.start ();
 console.log ('port ' + port)

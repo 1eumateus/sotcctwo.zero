@@ -13,7 +13,7 @@ async function sendEmail (dest,subject,content) {
     })
     let err = false;
     await transport.sendMail ({
-        from: 'SOTCC',
+        from: `SOTCC <${process.env.SMTP_EMAIL}>`,
         to: dest,
         subject: subject,
         html: content,

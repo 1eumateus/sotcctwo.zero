@@ -257,7 +257,7 @@ async function criar (req, res) {
         });
         await novo.save ();
         if (req.body.emailProfessor && req.body.nomeAluno){
-            let err = sendEmail (
+            let err = await sendEmail (
                 req.body.emailProfessor,
                 'SOTCC - Solicitação de orientação',
                 `<h3>O aluno ${req.body.nomeAluno} deseja ser orientado por você, entre para ver mais detalhes.<h3/><a href='${process.env.HOST_ROOT}/ui/login'>Clique aqui para entrar no sistema.</a>`,

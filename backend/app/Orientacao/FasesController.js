@@ -1,7 +1,8 @@
 import Model from "./Model.js";
 import jwt from "jsonwebtoken";
 import fs from 'fs';
-import { sendEmail } from '../shared/Mailer.js';
+import { notificar } from './Notificar.js';
+import { registrar, eventoArquivoFase, eventoComentario, eventoPrazo, eventosAtividade, eventoEnvioAtividade, eventoConclusaoAtividade } from './Registro.js';
 
 function formatarData (value) {
     if (!value) return '';
@@ -18,6 +19,13 @@ function temCancelamentoPendente (orientacao) {
 
 const MSG_CANCELAMENTO_PENDENTE = 'Ação suspensa: há uma solicitação de cancelamento pendente nesta orientação.';
 
+// Só a fase atual (primeira não aprovada) e as já aprovadas podem ser usadas; as seguintes ficam bloqueadas.
+function faseBloqueada (orientacao, indice) {
+    const atual = orientacao.fases.findIndex ((f) => f.situacao !== 'aprovada');
+    return atual !== -1 && Number (indice) > atual;
+}
+const MSG_FASE_BLOQUEADA = 'Esta fase ainda está bloqueada. Ela é liberada quando a fase anterior for aprovada.';
+
 async function visualizarFases (req, res) {
     try {
         const token = req.headers.authorization;
@@ -26,7 +34,7 @@ async function visualizarFases (req, res) {
             return {userID: usuario._id, userTipo: usuario.tipo};
         });
         if (!userID) return res.status (400);
-        const orientacao = await Model.findOne ({ ativo: true, _id: req.params.id });
+        const orientacao = await Model.findOne ({ _id: req.params.id });
         if (!orientacao) return res.status (404).json ({ msg: 'Orientação não encontrada.' });
         if (userTipo === 'aluno' && String (orientacao.aluno) === String (userID)) {
             orientacao.ultimaVisualizacaoAluno = new Date ();
@@ -63,6 +71,7 @@ async function enviarArquivoFase (req, res) {
         const faseIndex = Number (req.params.faseIndex);
         const fase = orientacao.fases [faseIndex];
         if (!fase) return res.status (404).json ({ msg: 'Fase não encontrada.' });
+        if (faseBloqueada (orientacao, req.params.faseIndex)) return res.status (400).json ({ msg: MSG_FASE_BLOQUEADA });
         const faseAtualIndex = orientacao.fases.findIndex ((f) => f.situacao !== 'aprovada');
         if (faseAtualIndex !== -1 && faseIndex !== faseAtualIndex) {
             return res.status (400).json ({ msg: 'Você só pode enviar arquivos para a fase atual.' });
@@ -99,6 +108,7 @@ async function removerArquivoFase (req, res) {
         const faseIndex = Number (req.params.faseIndex);
         const fase = orientacao.fases [faseIndex];
         if (!fase) return res.status (404).json ({ msg: 'Fase não encontrada.' });
+        if (faseBloqueada (orientacao, req.params.faseIndex)) return res.status (400).json ({ msg: MSG_FASE_BLOQUEADA });
         if (fase.situacao === 'aprovada') {
             return res.status (400).json ({ msg: 'Fase já aprovada, não é possível remover arquivos.' });
         }
@@ -111,6 +121,7 @@ async function removerArquivoFase (req, res) {
         if (arquivo.path && fs.existsSync (arquivo.path)) {
             fs.unlinkSync (arquivo.path);
         }
+        registrar (orientacao, eventoArquivoFase (fase, arquivo), [{ data: new Date (), texto: `{aluno} removeu o arquivo "${arquivo.originalname}" de "${fase.nome}"` }]);
         arquivo.deleteOne ();
         await orientacao.save ();
         res.status (200).json ({ msg: 'Arquivo removido.' });
@@ -132,20 +143,32 @@ async function definirDescricaoFase (req, res) {
         if (!orientacao) return res.status (404).json ({ msg: 'Orientação não encontrada.' });
         if (temCancelamentoPendente (orientacao)) return res.status (400).json ({ msg: MSG_CANCELAMENTO_PENDENTE });
         if (userTipo !== 'aluno' || String (orientacao.aluno) !== String (userID)) {
-            return res.status (403).json ({ msg: 'Apenas o aluno desta orientação pode editar a descrição.' });
+            return res.status (403).json ({ msg: 'Apenas o aluno desta orientação pode definir o tema.' });
         }
         const fase = orientacao.fases [Number (req.params.faseIndex)];
         if (!fase) return res.status (404).json ({ msg: 'Fase não encontrada.' });
+        if (faseBloqueada (orientacao, req.params.faseIndex)) return res.status (400).json ({ msg: MSG_FASE_BLOQUEADA });
         if (fase.situacao === 'aprovada') {
-            return res.status (400).json ({ msg: 'Fase já aprovada, não é possível editar a descrição.' });
+            return res.status (400).json ({ msg: 'Fase já aprovada, não é possível alterar o tema.' });
         }
-        fase.descricao = req.body.descricao?.trim () || '';
+        const anterior = fase.descricao?.trim () || '';
+        const tema = req.body.descricao?.trim () || '';
+        if (tema === anterior) return res.status (200).json ({ msg: 'Tema salvo.' });
+        fase.descricao = tema;
         fase.descricaoAlteradaEm = new Date ();
+        const acao = !tema ? 'removeu o tema do TCC' : anterior ? `alterou o tema do TCC para "${tema}"` : `definiu o tema do TCC: "${tema}"`;
+        registrar (orientacao, [{ data: fase.descricaoAlteradaEm, texto: `{aluno} ${acao}` }]);
         await orientacao.save ();
-        res.status (200).json ({ msg: 'Descrição salva.' });
+        if (tema) {
+            notificar (orientacao._id, 'SOTCC - Tema do TCC', (aluno) => ({
+                aluno: `<h3>Você ${anterior ? 'alterou' : 'definiu'} o tema do seu TCC.</h3><p>${tema}</p>`,
+                professor: `<h3>O aluno ${aluno} ${anterior ? 'alterou' : 'definiu'} o tema do TCC.</h3><p>${tema}</p>`,
+            }));
+        }
+        res.status (200).json ({ msg: 'Tema salvo.' });
     } catch (error) {
         console.log (error);
-        return res.status (400).json ({ msg: 'Erro ao salvar descrição.' });
+        return res.status (400).json ({ msg: 'Erro ao salvar o tema.' });
     }
 }
 
@@ -167,6 +190,7 @@ async function comentarFase (req, res) {
         if (!req.body.texto?.trim ()) return res.status (400).json ({ msg: 'Escreva um comentário.' });
         const fase = orientacao.fases [Number (req.params.faseIndex)];
         if (!fase) return res.status (404).json ({ msg: 'Fase não encontrada.' });
+        if (faseBloqueada (orientacao, req.params.faseIndex)) return res.status (400).json ({ msg: MSG_FASE_BLOQUEADA });
         const comentario = { autor: userTipo, texto: req.body.texto.trim () };
         if (req.file) {
             comentario.anexo = {
@@ -178,14 +202,15 @@ async function comentarFase (req, res) {
         }
         fase.comentarios.push (comentario);
         await orientacao.save ();
-        const destinatario = userTipo === 'aluno' ? orientacao.professor : orientacao.aluno;
-        if (destinatario?.email) {
-            sendEmail (
-                destinatario.email,
-                'SOTCC - Novo comentário na sua orientação',
-                `<h3>${userTipo === 'aluno' ? 'O aluno' : 'O orientador'} comentou na fase "${fase.nome}":</h3><p>${req.body.texto.trim ()}</p><a href='${process.env.HOST_ROOT}/ui/login'>Clique aqui para entrar no sistema.</a>`,
-            );
-        }
+        const texto = `<p>${req.body.texto.trim ()}</p>`;
+        notificar (orientacao._id, 'SOTCC - Novo comentário na orientação', (aluno, professor) => ({
+            aluno: userTipo === 'aluno'
+                ? `<h3>Você comentou na fase "${fase.nome}":</h3>${texto}`
+                : `<h3>O professor ${professor} comentou na fase "${fase.nome}":</h3>${texto}`,
+            professor: userTipo === 'aluno'
+                ? `<h3>O aluno ${aluno} comentou na fase "${fase.nome}":</h3>${texto}`
+                : `<h3>Você comentou na fase "${fase.nome}" do aluno ${aluno}:</h3>${texto}`,
+        }));
         res.status (200).json ({ msg: 'Comentário enviado.' });
     } catch (error) {
         console.log (error);
@@ -210,6 +235,7 @@ async function removerComentarioFase (req, res) {
         }
         const fase = orientacao.fases [Number (req.params.faseIndex)];
         if (!fase) return res.status (404).json ({ msg: 'Fase não encontrada.' });
+        if (faseBloqueada (orientacao, req.params.faseIndex)) return res.status (400).json ({ msg: MSG_FASE_BLOQUEADA });
         const comentario = fase.comentarios.id (req.params.comentarioId);
         if (!comentario) return res.status (404).json ({ msg: 'Comentário não encontrado.' });
         if (comentario.autor !== userTipo) {
@@ -218,6 +244,7 @@ async function removerComentarioFase (req, res) {
         if (comentario.anexo?.path && fs.existsSync (comentario.anexo.path)) {
             fs.unlinkSync (comentario.anexo.path);
         }
+        registrar (orientacao, eventoComentario (fase, comentario), [{ data: new Date (), texto: `{${userTipo}} removeu um comentário em "${fase.nome}"` }]);
         comentario.deleteOne ();
         await orientacao.save ();
         res.status (200).json ({ msg: 'Comentário removido.' });
@@ -245,6 +272,7 @@ async function editarComentarioFase (req, res) {
         if (!req.body.texto?.trim ()) return res.status (400).json ({ msg: 'Escreva um comentário.' });
         const fase = orientacao.fases [Number (req.params.faseIndex)];
         if (!fase) return res.status (404).json ({ msg: 'Fase não encontrada.' });
+        if (faseBloqueada (orientacao, req.params.faseIndex)) return res.status (400).json ({ msg: MSG_FASE_BLOQUEADA });
         const comentario = fase.comentarios.id (req.params.comentarioId);
         if (!comentario) return res.status (404).json ({ msg: 'Comentário não encontrado.' });
         if (comentario.autor !== userTipo) {
@@ -252,6 +280,7 @@ async function editarComentarioFase (req, res) {
         }
         comentario.texto = req.body.texto.trim ();
         comentario.editado = true;
+        registrar (orientacao, [{ data: new Date (), texto: `{${userTipo}} editou um comentário em "${fase.nome}"` }]);
         await orientacao.save ();
         res.status (200).json ({ msg: 'Comentário atualizado.' });
     } catch (error) {
@@ -277,19 +306,17 @@ async function avaliarFase (req, res) {
         const faseIndex = Number (req.params.faseIndex);
         const fase = orientacao.fases [faseIndex];
         if (!fase) return res.status (404).json ({ msg: 'Fase não encontrada.' });
+        if (faseBloqueada (orientacao, req.params.faseIndex)) return res.status (400).json ({ msg: MSG_FASE_BLOQUEADA });
         fase.situacao = 'aprovada';
         fase.aprovadaEm = new Date ();
         if (req.body.texto?.trim ()) {
             fase.comentarios.push ({ autor: 'professor', texto: req.body.texto.trim () });
         }
         await orientacao.save ();
-        if (orientacao.aluno?.email) {
-            sendEmail (
-                orientacao.aluno.email,
-                'SOTCC - Fase aprovada',
-                `<h3>O orientador aprovou a fase "${fase.nome}".</h3><a href='${process.env.HOST_ROOT}/ui/login'>Clique aqui para entrar no sistema.</a>`,
-            );
-        }
+        notificar (orientacao._id, 'SOTCC - Fase aprovada', (aluno, professor) => ({
+            aluno: `<h3>O professor ${professor} aprovou a fase "${fase.nome}".</h3>`,
+            professor: `<h3>Você aprovou a fase "${fase.nome}" do aluno ${aluno}.</h3>`,
+        }));
         res.status (200).json ({ msg: 'Fase aprovada.' });
     } catch (error) {
         console.log (error);
@@ -313,16 +340,19 @@ async function definirPrazoFase (req, res) {
         }
         const fase = orientacao.fases [Number (req.params.faseIndex)];
         if (!fase) return res.status (404).json ({ msg: 'Fase não encontrada.' });
+        if (faseBloqueada (orientacao, req.params.faseIndex)) return res.status (400).json ({ msg: MSG_FASE_BLOQUEADA });
+        if (fase.situacao === 'aprovada') return res.status (400).json ({ msg: 'Fase já aprovada, não é possível alterar o prazo.' });
+        registrar (orientacao, eventoPrazo (fase));
         fase.prazo = req.body.prazo || null;
         fase.prazoAlteradoEm = new Date ();
+        if (!fase.prazo) registrar (orientacao, [{ data: fase.prazoAlteradoEm, texto: `Prazo de "${fase.nome}" removido` }]);
         fase.lembretePrazoEnviado = false;
         await orientacao.save ();
-        if (fase.prazo && orientacao.aluno?.email) {
-            sendEmail (
-                orientacao.aluno.email,
-                'SOTCC - Novo prazo definido',
-                `<h3>Um novo prazo foi definido para a fase "${fase.nome}": ${formatarData (fase.prazo)}.</h3><a href='${process.env.HOST_ROOT}/ui/login'>Clique aqui para entrar no sistema.</a>`,
-            );
+        if (fase.prazo) {
+            notificar (orientacao._id, 'SOTCC - Novo prazo definido', (aluno, professor) => ({
+                aluno: `<h3>O professor ${professor} definiu o prazo da fase "${fase.nome}" para ${formatarData (fase.prazo)}.</h3>`,
+                professor: `<h3>Você definiu o prazo da fase "${fase.nome}" do aluno ${aluno} para ${formatarData (fase.prazo)}.</h3>`,
+            }));
         }
         res.status (200).json ({ msg: 'Prazo atualizado.' });
     } catch (error) {
@@ -349,15 +379,15 @@ async function criarAtividadeFase (req, res) {
         const tipo = req.body.tipo === 'arquivo' ? 'arquivo' : 'texto';
         const fase = orientacao.fases [Number (req.params.faseIndex)];
         if (!fase) return res.status (404).json ({ msg: 'Fase não encontrada.' });
+        if (faseBloqueada (orientacao, req.params.faseIndex)) return res.status (400).json ({ msg: MSG_FASE_BLOQUEADA });
+        if (fase.situacao === 'aprovada') return res.status (400).json ({ msg: 'Fase já aprovada, não é possível criar atividades.' });
         fase.atividades.push ({ titulo: req.body.titulo.trim (), tipo, prazo: req.body.prazo || null });
         await orientacao.save ();
-        if (orientacao.aluno?.email) {
-            sendEmail (
-                orientacao.aluno.email,
-                'SOTCC - Nova atividade',
-                `<h3>Uma nova atividade foi criada na fase "${fase.nome}": ${req.body.titulo.trim ()}</h3><a href='${process.env.HOST_ROOT}/ui/login'>Clique aqui para entrar no sistema.</a>`,
-            );
-        }
+        const titulo = req.body.titulo.trim ();
+        notificar (orientacao._id, 'SOTCC - Nova atividade', (aluno, professor) => ({
+            aluno: `<h3>O professor ${professor} criou uma nova atividade na fase "${fase.nome}": ${titulo}</h3>`,
+            professor: `<h3>Você criou a atividade "${titulo}" na fase "${fase.nome}" do aluno ${aluno}.</h3>`,
+        }));
         res.status (200).json ({ msg: 'Atividade criada.' });
     } catch (error) {
         console.log (error);
@@ -382,8 +412,13 @@ async function editarAtividadeFase (req, res) {
         if (!req.body.titulo?.trim ()) return res.status (400).json ({ msg: 'Escreva um título para a atividade.' });
         const fase = orientacao.fases [Number (req.params.faseIndex)];
         if (!fase) return res.status (404).json ({ msg: 'Fase não encontrada.' });
+        if (faseBloqueada (orientacao, req.params.faseIndex)) return res.status (400).json ({ msg: MSG_FASE_BLOQUEADA });
+        if (fase.situacao === 'aprovada') return res.status (400).json ({ msg: 'Fase já aprovada, não é possível editar atividades.' });
         const atividade = fase.atividades.id (req.params.atividadeId);
         if (!atividade) return res.status (404).json ({ msg: 'Atividade não encontrada.' });
+        if (atividade.titulo !== req.body.titulo.trim ()) {
+            registrar (orientacao, [{ data: new Date (), texto: `{professor} renomeou a atividade "${atividade.titulo}" para "${req.body.titulo.trim ()}"` }]);
+        }
         atividade.titulo = req.body.titulo.trim ();
         atividade.prazo = req.body.prazo || null;
         await orientacao.save ();
@@ -410,10 +445,14 @@ async function concluirAtividadeFase (req, res) {
         }
         const fase = orientacao.fases [Number (req.params.faseIndex)];
         if (!fase) return res.status (404).json ({ msg: 'Fase não encontrada.' });
+        if (faseBloqueada (orientacao, req.params.faseIndex)) return res.status (400).json ({ msg: MSG_FASE_BLOQUEADA });
+        if (fase.situacao === 'aprovada') return res.status (400).json ({ msg: 'Fase já aprovada, não é possível alterar atividades.' });
         const atividade = fase.atividades.id (req.params.atividadeId);
         if (!atividade) return res.status (404).json ({ msg: 'Atividade não encontrada.' });
+        registrar (orientacao, eventoConclusaoAtividade (fase, atividade));
         atividade.concluida = !!req.body.concluida;
         atividade.concluidaEm = atividade.concluida ? new Date () : null;
+        if (!atividade.concluida) registrar (orientacao, [{ data: new Date (), texto: `{professor} reabriu a atividade "${atividade.titulo}"` }]);
         await orientacao.save ();
         res.status (200).json ({ msg: atividade.concluida ? 'Atividade concluída.' : 'Atividade reaberta.' });
     } catch (error) {
@@ -438,8 +477,11 @@ async function removerAtividadeFase (req, res) {
         }
         const fase = orientacao.fases [Number (req.params.faseIndex)];
         if (!fase) return res.status (404).json ({ msg: 'Fase não encontrada.' });
+        if (faseBloqueada (orientacao, req.params.faseIndex)) return res.status (400).json ({ msg: MSG_FASE_BLOQUEADA });
+        if (fase.situacao === 'aprovada') return res.status (400).json ({ msg: 'Fase já aprovada, não é possível remover atividades.' });
         const atividade = fase.atividades.id (req.params.atividadeId);
         if (!atividade) return res.status (404).json ({ msg: 'Atividade não encontrada.' });
+        registrar (orientacao, eventosAtividade (fase, atividade), [{ data: new Date (), texto: `{professor} removeu a atividade "${atividade.titulo}" de "${fase.nome}"` }]);
         atividade.deleteOne ();
         await orientacao.save ();
         res.status (200).json ({ msg: 'Atividade removida.' });
@@ -465,13 +507,16 @@ async function responderAtividadeFase (req, res) {
         }
         const fase = orientacao.fases [Number (req.params.faseIndex)];
         if (!fase) return res.status (404).json ({ msg: 'Fase não encontrada.' });
+        if (faseBloqueada (orientacao, req.params.faseIndex)) return res.status (400).json ({ msg: MSG_FASE_BLOQUEADA });
         if (fase.situacao === 'aprovada') {
             return res.status (400).json ({ msg: 'Fase já aprovada, não é possível responder atividades.' });
         }
         const atividade = fase.atividades.id (req.params.atividadeId);
         if (!atividade) return res.status (404).json ({ msg: 'Atividade não encontrada.' });
+        if (atividade.concluida) return res.status (400).json ({ msg: 'Atividade já entregue. Peça ao orientador para reabrir se precisar alterar.' });
         if (atividade.tipo !== 'texto') return res.status (400).json ({ msg: 'Esta atividade pede o envio de um arquivo.' });
         if (!req.body.texto?.trim ()) return res.status (400).json ({ msg: 'Escreva uma resposta.' });
+        registrar (orientacao, eventoConclusaoAtividade (fase, atividade));
         atividade.resposta = req.body.texto.trim ();
         atividade.concluida = true;
         atividade.concluidaEm = new Date ();
@@ -499,11 +544,13 @@ async function enviarArquivoAtividadeFase (req, res) {
         }
         const fase = orientacao.fases [Number (req.params.faseIndex)];
         if (!fase) return res.status (404).json ({ msg: 'Fase não encontrada.' });
+        if (faseBloqueada (orientacao, req.params.faseIndex)) return res.status (400).json ({ msg: MSG_FASE_BLOQUEADA });
         if (fase.situacao === 'aprovada') {
             return res.status (400).json ({ msg: 'Fase já aprovada, não é possível enviar arquivos.' });
         }
         const atividade = fase.atividades.id (req.params.atividadeId);
         if (!atividade) return res.status (404).json ({ msg: 'Atividade não encontrada.' });
+        if (atividade.concluida) return res.status (400).json ({ msg: 'Atividade já entregue. Peça ao orientador para reabrir se precisar alterar.' });
         if (atividade.tipo !== 'arquivo') return res.status (400).json ({ msg: 'Esta atividade pede uma resposta em texto.' });
         if (!req.file) return res.status (400).json ({ msg: 'Nenhum arquivo enviado.' });
         atividade.arquivos.push ({
@@ -512,6 +559,7 @@ async function enviarArquivoAtividadeFase (req, res) {
             path: req.file.path,
             size: req.file.size,
         });
+        registrar (orientacao, eventoConclusaoAtividade (fase, atividade));
         atividade.concluida = true;
         atividade.concluidaEm = new Date ();
         await orientacao.save ();
@@ -538,11 +586,13 @@ async function removerArquivoAtividadeFase (req, res) {
         }
         const fase = orientacao.fases [Number (req.params.faseIndex)];
         if (!fase) return res.status (404).json ({ msg: 'Fase não encontrada.' });
+        if (faseBloqueada (orientacao, req.params.faseIndex)) return res.status (400).json ({ msg: MSG_FASE_BLOQUEADA });
         if (fase.situacao === 'aprovada') {
             return res.status (400).json ({ msg: 'Fase já aprovada, não é possível remover arquivos.' });
         }
         const atividade = fase.atividades.id (req.params.atividadeId);
         if (!atividade) return res.status (404).json ({ msg: 'Atividade não encontrada.' });
+        if (atividade.concluida) return res.status (400).json ({ msg: 'Atividade já entregue. Peça ao orientador para reabrir se precisar alterar.' });
         const arquivo = atividade.arquivos.id (req.params.arquivoId);
         if (!arquivo) return res.status (404).json ({ msg: 'Arquivo não encontrado.' });
         const ultimoArquivo = atividade.arquivos [atividade.arquivos.length - 1];
@@ -552,8 +602,10 @@ async function removerArquivoAtividadeFase (req, res) {
         if (arquivo.path && fs.existsSync (arquivo.path)) {
             fs.unlinkSync (arquivo.path);
         }
+        registrar (orientacao, eventoEnvioAtividade (atividade, arquivo), [{ data: new Date (), texto: `{aluno} removeu "${arquivo.originalname}" da atividade "${atividade.titulo}"` }]);
         arquivo.deleteOne ();
         if (atividade.arquivos.length === 0) {
+            registrar (orientacao, eventoConclusaoAtividade (fase, atividade));
             atividade.concluida = false;
             atividade.concluidaEm = null;
         }

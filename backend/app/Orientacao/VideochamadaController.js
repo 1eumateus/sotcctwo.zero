@@ -3,7 +3,8 @@ import { v4 as uuidv4} from "uuid";
 import Model from "./Model.js";
 import Usuario from "../Usuario/Model.js";
 import { temCancelamentoPendente, MSG_CANCELAMENTO_PENDENTE } from "./FasesController.js";
-import { sendEmail } from "../shared/Mailer.js";
+import { notificar } from './Notificar.js';
+import { registrar, formatarDiaHora, eventoReuniao } from './Registro.js';
 
 const TOKEN_TTL_SEGUNDOS = 3 * 60 * 60;
 
@@ -143,6 +144,7 @@ async function criarReuniao (req, res) {
         const usuario = await Usuario.findOne ({ _id: userID });
         if (!usuario) return res.status (404).json ({ msg: 'Usuário não encontrado.' });
         const salaId = uuidv4 ();
+        registrar (orientacao, eventoReuniao (orientacao));
         orientacao.reuniao = { salaId, ativa: true, iniciadaEm: new Date () };
         await orientacao.save ();
         const roomName = `reuniao-${orientacao._id}-${salaId}`;
@@ -217,15 +219,13 @@ async function agendarReuniao (req, res) {
             return res.status (400).json ({ msg: 'A data da reunião precisa ser no futuro.' });
         }
         const salaId = uuidv4 ();
+        registrar (orientacao, eventoReuniao (orientacao), [{ data: new Date (), texto: `{professor} marcou uma reunião para ${formatarDiaHora (agendadaPara)}` }]);
         orientacao.reuniao = { salaId, ativa: false, iniciadaEm: null, agendadaPara };
         await orientacao.save ();
-        if (orientacao.aluno?.email) {
-            sendEmail (
-                orientacao.aluno.email,
-                'SOTCC - Reunião marcada',
-                `<h3>Seu orientador marcou uma reunião para ${formatarDataHora (agendadaPara)}.</h3><a href='${process.env.HOST_ROOT}/ui/login'>Clique aqui para entrar no sistema.</a>`,
-            );
-        }
+        notificar (orientacao._id, 'SOTCC - Reunião marcada', (aluno, professor) => ({
+            aluno: `<h3>O professor ${professor} marcou uma reunião com você para ${formatarDataHora (agendadaPara)}.</h3>`,
+            professor: `<h3>Você marcou uma reunião com o aluno ${aluno} para ${formatarDataHora (agendadaPara)}.</h3>`,
+        }));
         res.status (200).json ({ msg: 'Reunião marcada com sucesso.', agendadaPara });
     } catch (error) {
         console.log (error);

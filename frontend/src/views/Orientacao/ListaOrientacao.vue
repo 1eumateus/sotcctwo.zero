@@ -170,42 +170,102 @@
                     </div>
                 </div>
             </div>
-            <div class="flex flex-col" v-else-if="mostrarHistorico">
-                <Texto as="body" color="gray" v-if="historicoExibido.length === 0">
-                    {{ filtroExterno === 'concluido' ? 'Nenhuma orientação concluída ainda.' : 'Nenhuma orientação no histórico ainda.' }}
-                </Texto>
-                <div
-                    v-for="item in historicoExibido"
-                    :key="item._id"
-                    class="flex items-center gap-[12px] py-[12px] border-b border-secundaria last:border-b-0"
-                >
-                    <div class="w-[40px] h-[40px] rounded-full flex items-center justify-center flex-shrink-0" :class="historicoIconBg(item.situacao)">
-                        <PhCheckCircle v-if="item.situacao === 'concluido'" :size="20" class="fill-white" />
-                        <PhProhibit v-else-if="item.situacao === 'negado'" :size="20" class="fill-white" />
-                        <PhXCircle v-else :size="20" class="fill-white" />
-                    </div>
-                    <div class="flex-1 min-w-0">
-                        <Texto as="body-bold" class="truncate">
-                            {{ nomeCompleto(outraPessoa(item)) }}
-                        </Texto>
-                        <Texto as="label" color="gray" class="line-clamp-2">
-                            {{ historicoResumo(item) }}
-                        </Texto>
-                        <Texto as="small" color="gray">
-                            {{ historicoData(item) }}
-                        </Texto>
-                    </div>
-                    <span :class="`text-xs font-bold px-[10px] py-[3px] rounded-full flex-shrink-0 ${situacaoClass(item.situacao)}`">
-                        {{ situacaoLabel(item.situacao) }}
-                    </span>
-                    <router-link
-                        :to="`/ui/acompanhamento/${item._id}`"
-                        class="cursor-pointer flex items-center gap-[4px] px-[10px] py-[6px] border border-principal text-principal hover:bg-secundaria rounded-md font-bold text-[13px] flex-shrink-0"
-                    >
-                        <PhInfo :size="16" />
-                        Ver detalhes
-                    </router-link>
+            <div class="flex flex-col gap-[14px]" v-else-if="mostrarHistorico">
+                <div v-if="historicoExibido.length === 0" class="flex flex-col items-center gap-[6px] py-[24px]">
+                    <PhClockCounterClockwise :size="32" class="fill-secundaria-opaco" />
+                    <Texto as="body" color="gray">
+                        {{ filtroExterno === 'concluido' ? 'Nenhuma orientação concluída ainda.' : 'Nenhuma orientação no histórico ainda.' }}
+                    </Texto>
                 </div>
+                <section
+                    v-for="secao in secoesHistorico"
+                    :key="secao.chave"
+                    :class="secao.caixa
+                        ? 'rounded-xl border border-secundaria-opaco bg-secundaria/50 p-[10px]'
+                        : ''"
+                >
+                    <div class="flex items-center gap-[8px] mb-[6px] px-[4px]">
+                        <span v-if="!secao.caixa" class="relative flex w-[10px] h-[10px]">
+                            <span class="absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-60 animate-ping"></span>
+                            <span class="relative inline-flex w-[10px] h-[10px] rounded-full bg-green-500"></span>
+                        </span>
+                        <PhArchive v-else :size="18" class="fill-gray-500" />
+                        <Texto as="body-bold" :color="secao.caixa ? 'gray' : 'principal'">{{ secao.titulo }}</Texto>
+                        <span class="text-[11px] font-bold px-[8px] py-[1px] rounded-full bg-white border border-secundaria-opaco text-gray-600">
+                            {{ secao.grupos.length }}
+                        </span>
+                    </div>
+                    <div :class="secao.caixa ? 'flex flex-col gap-[6px]' : 'flex flex-col'">
+                        <details
+                            v-for="grupo in secao.grupos"
+                            :key="grupo.id"
+                            :class="`group rounded-lg transition-colors ${secao.caixa ? 'bg-white border border-secundaria-opaco' : 'border-b border-secundaria last:border-b-0'}`"
+                        >
+                            <summary class="flex items-center gap-[10px] py-[10px] px-[8px] cursor-pointer list-none rounded-lg hover:bg-secundaria/40">
+                                <img
+                                    v-if="grupo.pessoa?.imagem?.filename"
+                                    :src="`${urlApi}/uploads/${grupo.pessoa.imagem.filename}`"
+                                    alt=""
+                                    class="w-[36px] h-[36px] rounded-full object-cover flex-shrink-0"
+                                />
+                                <span
+                                    v-else
+                                    :class="`w-[36px] h-[36px] rounded-full flex items-center justify-center flex-shrink-0 text-[13px] font-bold text-white ${secao.caixa ? 'bg-gray-400' : 'bg-principal'}`"
+                                >
+                                    {{ iniciais(grupo.pessoa) }}
+                                </span>
+                                <div class="flex-1 min-w-0">
+                                    <Texto as="body-bold" class="truncate">
+                                        {{ nomeCompleto(grupo.pessoa) }}
+                                    </Texto>
+                                    <Texto as="small" color="gray" class="truncate block" v-if="grupo.itens[0].eventos?.length">
+                                        {{ dataHora(grupo.itens[0].eventos[0].data) }} · {{ grupo.itens[0].eventos[0].texto }}
+                                    </Texto>
+                                </div>
+                                <span :class="`text-xs font-bold px-[10px] py-[3px] rounded-full flex-shrink-0 ${situacaoClass(grupo.itens[0].situacao)}`">
+                                    {{ situacaoLabel(grupo.itens[0].situacao) }}
+                                </span>
+                                <PhCaretRight :size="16" class="fill-principal flex-shrink-0 transition-transform group-open:rotate-90" />
+                            </summary>
+                            <div class="pb-[12px] px-[12px] flex flex-col gap-[14px]">
+                                <template v-for="(item, indice) in grupo.itens" :key="item._id">
+                                    <div v-if="indice === 0 || antigasAbertas[grupo.id]">
+                                        <div class="flex items-center justify-between gap-[8px] mb-[8px]">
+                                            <Texto as="small" color="gray">
+                                                {{ indice > 0 ? 'Orientação anterior' : item.ativo ? 'Orientação em andamento' : 'Orientação mais recente' }} · {{ historicoResumo(item) }}
+                                            </Texto>
+                                            <router-link
+                                                :to="`/ui/acompanhamento/${item._id}`"
+                                                class="cursor-pointer flex items-center gap-[4px] px-[8px] py-[4px] border border-principal text-principal hover:bg-secundaria rounded-md font-bold text-[12px] flex-shrink-0"
+                                            >
+                                                <PhInfo :size="14" />
+                                                Ver detalhes
+                                            </router-link>
+                                        </div>
+                                        <ol class="relative ml-[6px] border-l-2 border-secundaria-opaco flex flex-col gap-[8px]">
+                                            <li v-for="(evento, i) in item.eventos" :key="i" class="relative pl-[14px]">
+                                                <span
+                                                    :class="`absolute -left-[6px] top-[4px] w-[10px] h-[10px] rounded-full border-2 border-white ${i === 0 && item.ativo ? 'bg-terciaria' : 'bg-principal/60'}`"
+                                                ></span>
+                                                <Texto as="small" color="gray" class="block">{{ dataHora(evento.data) }}</Texto>
+                                                <span class="text-[13px] text-gray-800">{{ evento.texto }}</span>
+                                            </li>
+                                        </ol>
+                                    </div>
+                                </template>
+                                <button
+                                    v-if="grupo.itens.length > 1"
+                                    type="button"
+                                    class="self-start cursor-pointer flex items-center gap-[4px] text-[12px] font-bold text-principal hover:underline"
+                                    @click="antigasAbertas[grupo.id] = !antigasAbertas[grupo.id]"
+                                >
+                                    <PhClockCounterClockwise :size="14" />
+                                    {{ antigasAbertas[grupo.id] ? 'Ocultar orientações anteriores' : `Ver orientações anteriores (${grupo.itens.length - 1})` }}
+                                </button>
+                            </div>
+                        </details>
+                    </div>
+                </section>
             </div>
             <div class="overflow-x-auto" v-else>
                 <table v-if="linhasExibidas.length>0" class="min-w-full text-sm">
@@ -299,7 +359,7 @@
 </template>
 
 <script setup>
-import { PhUsersThree, PhCheck, PhInfo, PhChartLineUp, PhClock, PhX, PhCheckCircle, PhXCircle, PhProhibit } from '@phosphor-icons/vue'
+import { PhUsersThree, PhCheck, PhInfo, PhChartLineUp, PhClock, PhX, PhArchive, PhCaretRight, PhClockCounterClockwise } from '@phosphor-icons/vue'
 import Texto from '@components/Texto.vue'
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import api from "@/api.js";
@@ -358,16 +418,11 @@ function nomeCompleto (pessoa) {
 }
 
 function situacaoLabel (situacao) {
+    if (situacao === 'confirmado') return 'Em andamento';
     if (situacao === 'concluido') return 'Concluída';
     if (situacao === 'cancelado') return 'Cancelada';
     if (situacao === 'negado') return 'Negada';
     return 'Encerrada';
-}
-
-function historicoIconBg (situacao) {
-    if (situacao === 'concluido') return 'bg-principal';
-    if (situacao === 'negado') return 'bg-gray-400';
-    return 'bg-red-500';
 }
 
 function historicoResumo (item) {
@@ -381,14 +436,12 @@ function historicoResumo (item) {
     if (item.situacao === 'negado') {
         return item.resposta ? `Solicitação negada. Motivo: ${item.resposta}` : 'Solicitação negada.';
     }
+    if (item.situacao === 'confirmado') return 'Em andamento.';
     return 'Orientação encerrada.';
 }
 
-function historicoData (item) {
-    if (item.situacao === 'concluido' && item.dataDefesa) {
-        return `Defendido em ${formatMask.viewDate(item.dataDefesa)}`;
-    }
-    return item.dataCriacao ? formatMask.viewDate(item.dataCriacao) : '';
+function dataHora (data) {
+    return new Date(data).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
 }
 
 const mostrarHistorico = ref (false);
@@ -405,7 +458,7 @@ const linhasExibidas = computed(() => {
         return orientacoes.filter((item) => item.situacao === 'confirmado');
     }
     if (props.filtroExterno === 'todas') {
-        return [...orientacoes, ...historicoItens.filter((item) => item.situacao !== 'concluido')]
+        return [...orientacoes, ...historicoItens.filter((item) => !item.ativo && item.situacao !== 'concluido')]
             .sort((a, b) => new Date(b.dataCriacao) - new Date(a.dataCriacao));
     }
     return orientacoes;
@@ -416,6 +469,34 @@ const historicoExibido = computed(() => (
         ? historicoItens.filter((item) => item.situacao === 'concluido')
         : historicoItens
 ));
+
+const antigasAbertas = reactive({});
+
+// Um grupo por pessoa (pelo _id, não pelo nome), em ordem alfabética.
+// Em andamento em cima; quem só tem orientações encerradas vai para a caixa de baixo.
+const secoesHistorico = computed(() => {
+    const grupos = new Map();
+    for (const item of historicoExibido.value) {
+        const pessoa = outraPessoa(item);
+        const id = pessoa?._id || item._id;
+        if (!grupos.has(id)) grupos.set(id, { id, pessoa, itens: [] });
+        grupos.get(id).itens.push(item);
+    }
+    const lista = [...grupos.values()];
+    for (const grupo of lista) {
+        // A orientação em andamento vem primeiro; as encerradas ficam em "anteriores".
+        grupo.itens.sort((a, b) => (b.ativo - a.ativo) || new Date(b.dataCriacao) - new Date(a.dataCriacao));
+    }
+    lista.sort((a, b) => nomeCompleto(a.pessoa).localeCompare(nomeCompleto(b.pessoa), 'pt-BR', { sensitivity: 'base' }));
+    return [
+        { chave: 'andamento', titulo: 'Em andamento', caixa: false, grupos: lista.filter((g) => g.itens[0].ativo) },
+        { chave: 'encerradas', titulo: 'Concluídas e canceladas', caixa: true, grupos: lista.filter((g) => !g.itens[0].ativo) },
+    ].filter((secao) => secao.grupos.length);
+});
+
+function iniciais (pessoa) {
+    return `${pessoa?.nome?.[0] || ''}${pessoa?.sobrenome?.[0] || ''}`.toUpperCase() || '?';
+}
 
 function situacaoClass (situacao) {
     if (situacao === 'confirmado') return 'bg-green-100 text-green-700';

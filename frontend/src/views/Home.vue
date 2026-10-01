@@ -488,6 +488,15 @@
                                     Acompanhar
                                 </router-link>
                                 <button
+                                    v-else-if="props?.usuario?.tipo === 'aluno' && minhaOrientacao"
+                                    type="button"
+                                    disabled
+                                    title="Cada aluno só pode ter um orientador."
+                                    class="cursor-not-allowed w-full flex items-center justify-center gap-[4px] px-[8px] py-[5px] bg-gray-300 text-gray-600 rounded-md font-bold text-[11px]"
+                                >
+                                    Você já tem orientador
+                                </button>
+                                <button
                                     v-else-if="props?.usuario?.tipo === 'aluno'"
                                     type="button"
                                     class="cursor-pointer w-full flex items-center justify-center gap-[4px] px-[8px] py-[5px] bg-principal text-white hover:bg-principal-opaco rounded-md font-bold text-[11px]"
@@ -509,6 +518,7 @@ import { PhInfo, PhRocketLaunch, PhChartLineUp, PhBell, PhWarning, PhUsersThree,
 import { computed, onMounted, onUnmounted, ref, reactive } from "vue";
 import api from "@/api.js";
 import { popupInfo, formatMask } from '../stores/util.js';
+import { prazoVencido, estadoOrientacao } from '../stores/prazo.js';
 import Texto from '@components/Texto.vue'
 import { useLoaderState } from "../stores/isLoading";
 import ListaOrientacao from './Orientacao/ListaOrientacao.vue';
@@ -640,17 +650,17 @@ const alunosOrientadosBase = computed(() => {
         }));
 });
 
-function estaAtrasado(faseAtual) {
-    if (!faseAtual?.prazo) return false;
-    return new Date(faseAtual.prazo) < new Date();
+// Com pedido de cancelamento o prazo fica suspenso: não conta como atraso.
+function estaAtrasado(orientacaoOuAluno) {
+    return prazoVencido(orientacaoOuAluno?.faseAtual?.prazo, { estado: estadoOrientacao(orientacaoOuAluno) });
 }
 
-const alunosAtrasados = computed(() => alunosOrientadosBase.value.filter((a) => estaAtrasado(a.faseAtual)));
+const alunosAtrasados = computed(() => alunosOrientadosBase.value.filter((a) => estaAtrasado(a)));
 const alunosNoPrazo = computed(() => alunosOrientadosBase.value.length - alunosAtrasados.value.length);
 
 const alunosOrientados = computed(() => {
     if (filtroStatus.value === 'atrasado') return alunosAtrasados.value;
-    if (filtroStatus.value === 'em-dia') return alunosOrientadosBase.value.filter((a) => !estaAtrasado(a.faseAtual));
+    if (filtroStatus.value === 'em-dia') return alunosOrientadosBase.value.filter((a) => !estaAtrasado(a));
     return alunosOrientadosBase.value;
 });
 
@@ -676,7 +686,7 @@ const maiorFase = computed(() => Math.max(1, ...distribuicaoFases.value.map((f) 
 const minhaOrientacao = computed(() => orientacoes.find((o) => o.situacao === 'confirmado') || null);
 const minhasEmAndamento = computed(() => orientacoes.filter((o) => o.situacao === 'confirmado').length);
 const minhaFaseAtual = computed(() => minhaOrientacao.value?.faseAtual || null);
-const minhaOrientacaoAtrasada = computed(() => estaAtrasado(minhaOrientacao.value?.faseAtual));
+const minhaOrientacaoAtrasada = computed(() => estaAtrasado(minhaOrientacao.value));
 
 const diasParaDefesa = computed(() => {
     if (!minhaOrientacao.value?.dataDefesa) return null;
@@ -687,7 +697,7 @@ const diasParaDefesa = computed(() => {
 });
 
 const concluidas = computed(() => historico.filter((h) => h.situacao === 'concluido').length);
-const totalSolicitacoes = computed(() => orientacoes.length + historico.length);
+const totalSolicitacoes = computed(() => orientacoes.length + historico.filter((h) => !h.ativo).length);
 
 async function listarHistorico() {
     await api.get('/orientacao/historico')

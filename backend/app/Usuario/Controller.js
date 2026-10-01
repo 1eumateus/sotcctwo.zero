@@ -154,11 +154,6 @@ async function listarProfessores (req, res) {
 
 async function criar (req, res) {
     try {
-        const tokenUser = req.headers.authorization;
-        const { userTipo } = jwt.verify (tokenUser, process.env.JWT_SECRET, (err, usuario) => {
-            if (err) return false;
-            return { userTipo: usuario.tipo };
-        });
         let novo = await Model.findOne ({ ativo: true, email: req.body.email });
         if (novo && novo.verificado) return res.status(400).json ({ msg: "Usuário já cadastrado." });
         if(req.body?.senha?.length < 6){
@@ -206,23 +201,15 @@ async function criar (req, res) {
             novo.senha = hashSenha;
             novo.subunidades = req.body.subunidades;
         }
-        const smtpConfigurado = !!(process.env.SMTP_EMAIL && process.env.SMTP_SENHA);
-        if (userTipo !== 'admin' && smtpConfigurado) {
-            let err = await sendEmail (
-                req.body.email,
-                'SOTCC - Email de confirmação',
-                `<h3>Confirme seu email para entrar no sistema.<h3/><a href='${process.env.HOST_ROOT}/ui/login?user=${novo._id}'>Clique para confirmar email.</a>`);
-            if (err == true) {
-                return res.status (400).json ({ msg: "Erro ao enviar email de confirmação. Confere o endereço." })
-            }
-        } else if (userTipo !== 'admin') {
-            console.warn ('SMTP não configurado: pulando confirmação por email e ativando o usuário automaticamente (modo dev).');
-            novo.verificado = true;
+        let err = await sendEmail (
+            req.body.email,
+            'SOTCC - Email de confirmação',
+            `<h3>Confirme seu email para entrar no sistema.</h3><a href='${process.env.HOST_ROOT}/ui/login?user=${novo._id}'>Clique para confirmar email.</a>`);
+        if (err == true) {
+            return res.status (400).json ({ msg: "Erro ao enviar email de confirmação. Confere o endereço." })
         }
         await novo.save ();
-        res.json ({
-            msg: smtpConfigurado ? 'Email de confirmação enviado.' : 'Usuário cadastrado com sucesso.'
-        });
+        res.json ({ msg: 'Email de confirmação enviado.' });
     } catch (error) {
         console.log (error)
         return res.status (400).json ({ msg: "Erro 400." });
@@ -380,7 +367,7 @@ async function recuperarSenhaSolicitacao (req, res) {
         let err = await sendEmail (
             req.body.email, 
             'SOTCC - Recuperação de senha',
-            `<h3>Clique no link seguinte para redefinir a sua senha.<h3/><a href='${process.env.HOST_ROOT}/ui/redefinir/${codigo}/'>Clique para confirmar email.</a>`);
+            `<h3>Clique no link seguinte para redefinir a sua senha.</h3><a href='${process.env.HOST_ROOT}/ui/redefinir/${codigo}/'>Clique para confirmar email.</a>`);
         if (err == false) return res.json ({msg: 'Email de recuperação enviado com sucesso.'});
         else return res.status(400).json ({ msg: "Erro ao enviar email de recuperação. Confere o endereço." })
     } catch (error) {

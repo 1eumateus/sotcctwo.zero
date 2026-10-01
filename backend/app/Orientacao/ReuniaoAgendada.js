@@ -1,6 +1,7 @@
 import cron from "node-cron";
 import Model from "./Model.js";
-import { sendEmail } from '../shared/Mailer.js';
+import { notificar } from './Notificar.js';
+import { registrar, eventoReuniao } from './Registro.js';
 
 function formatarDataHora (data) {
     const dia = String (data.getUTCDate ()).padStart (2, '0');
@@ -17,19 +18,17 @@ async function abrirReunioesAgendadas () {
         ativo: true,
         'reuniao.ativa': false,
         'reuniao.agendadaPara': { $ne: null, $lte: agora },
-    }).populate ('aluno', 'email');
+    });
     for (const orientacao of orientacoes) {
         const agendadaPara = orientacao.reuniao.agendadaPara;
         orientacao.reuniao.ativa = true;
+        registrar (orientacao, eventoReuniao (orientacao));
         orientacao.reuniao.iniciadaEm = new Date ();
         await orientacao.save ();
-        if (orientacao.aluno?.email) {
-            sendEmail (
-                orientacao.aluno.email,
-                'SOTCC - Reunião liberada',
-                `<h3>A reunião marcada para ${formatarDataHora (agendadaPara)} já está liberada. Entre na sua página de acompanhamento.</h3><a href='${process.env.HOST_ROOT}/ui/login'>Clique aqui para entrar no sistema.</a>`,
-            );
-        }
+        notificar (orientacao._id, 'SOTCC - Reunião liberada', (aluno, professor) => ({
+            aluno: `<h3>A reunião com o professor ${professor} marcada para ${formatarDataHora (agendadaPara)} já está liberada. Entre na página de acompanhamento.</h3>`,
+            professor: `<h3>A reunião com o aluno ${aluno} marcada para ${formatarDataHora (agendadaPara)} já está liberada. Entre na página de acompanhamento.</h3>`,
+        }));
     }
 }
 

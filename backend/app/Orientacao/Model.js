@@ -111,6 +111,16 @@ const modelSchema = new Schema ({
         type: Date,
         default: null,
     },
+    encerradoEm: {
+        type: Date,
+        default: null,
+    },
+    // Eventos que seriam perdidos (itens removidos, valores sobrescritos). Ver Registro.js.
+    registro: [{
+        _id: false,
+        data: Date,
+        texto: String,
+    }],
     tema: {
         type: String,
     },

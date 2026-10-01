@@ -2,7 +2,8 @@ import Model from "./Model.js";
 import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 const { ObjectId } = mongoose.Types;
-import { sendEmail } from '../shared/Mailer.js';
+import { notificar } from './Notificar.js';
+import { linhaDoTempo } from './Registro.js';
 
 async function marcarNotificacoesVistas (req, res) {
     try {
@@ -13,7 +14,7 @@ async function marcarNotificacoesVistas (req, res) {
         });
         if (!userID) return res.status (400);
         const campo = userTipo === 'aluno' ? 'ultimaVisualizacaoAluno' : 'ultimaVisualizacaoProfessor';
-        const filtro = { ativo: true };
+        const filtro = {};
         filtro [userTipo] = new ObjectId (String (userID));
         await Model.updateMany (filtro, { $set: { [campo]: new Date () } });
         res.status (200).json ({});
@@ -31,7 +32,8 @@ async function listar (req, res) {
             return {userID: usuario._id, userTipo: usuario.tipo};
         });
         if (!userID) return res.status (400);
-        const filtro = {ativo: true}
+        const notificacoes = req.query.notificacoes === '1';
+        const filtro = notificacoes ? { $or: [{ ativo: true }, { encerradoEm: { $ne: null } }] } : { ativo: true };
         if (userTipo === 'aluno') {
             filtro.aluno = new ObjectId (String (userID));
         }
@@ -48,6 +50,7 @@ async function listar (req, res) {
                     ativo: 1,
                     situacao: 1,
                     confirmadoEm: 1,
+                    encerradoEm: 1,
                     proposta: 1,
                     resposta:1,
                     coorientador: 1,
@@ -59,6 +62,7 @@ async function listar (req, res) {
                     ultimaVisualizacaoAluno: 1,
                     ultimaVisualizacaoProfessor: 1,
                     cancelamento: 1,
+                    registro: 1,
                 }
             },
             {
@@ -101,6 +105,7 @@ async function listar (req, res) {
             o.notificacaoDetalhe = atividade?.detalhe || null;
             o.notificacaoLida = atividade ? atividade.lida : true;
             o.notificacao = atividade ? !atividade.lida : false;
+            o.naoLidas = atividade?.naoLidas || 0;
             const faseEmAndamentoIndex = (o.fases || []).findIndex ((f) => f.situacao !== 'aprovada');
             const faseEmAndamento = faseEmAndamentoIndex === -1 ? null : o.fases [faseEmAndamentoIndex];
             o.faseAtual = faseEmAndamento ? { nome: faseEmAndamento.nome, prazo: faseEmAndamento.prazo } : null;
@@ -110,8 +115,10 @@ async function listar (req, res) {
             delete o.fases;
             delete o.ultimaVisualizacaoAluno;
             delete o.ultimaVisualizacaoProfessor;
+            delete o.registro;
         });
-        res.status (200).json ({ item });
+        // No sino, encerradas só aparecem enquanto o aviso não foi visto.
+        res.status (200).json ({ item: notificacoes ? item.filter ((o) => o.ativo || o.notificacao) : item });
     } catch (error) {
         console.log (error);
         return res.status (400).json ({msg: 'Erro ao buscar solicitações'});
@@ -126,7 +133,8 @@ async function historico (req, res) {
             return {userID: usuario._id, userTipo: usuario.tipo};
         });
         if (!userID) return res.status (400);
-        const filtro = {ativo: false}
+        // Encerradas + a em andamento, para a linha do tempo.
+        const filtro = { $or: [{ ativo: false }, { ativo: true, situacao: 'confirmado' }] }
         if (userTipo === 'aluno') {
             filtro.aluno = new ObjectId (String (userID));
         }
@@ -138,6 +146,7 @@ async function historico (req, res) {
             {
                 $project: {
                     _id: 1,
+                    ativo: 1,
                     professor: 1,
                     aluno: 1,
                     situacao: 1,
@@ -147,6 +156,11 @@ async function historico (req, res) {
                     cancelamento: 1,
                     dataCriacao: 1,
                     dataDefesa: 1,
+                    confirmadoEm: 1,
+                    encerradoEm: 1,
+                    fases: 1,
+                    reuniao: 1,
+                    registro: 1,
                 }
             },
             {
@@ -185,6 +199,10 @@ async function historico (req, res) {
             },
             { $sort: { dataCriacao: -1 } },
         ]);
+        for (const orientacao of item) {
+            orientacao.eventos = linhaDoTempo (orientacao);
+            delete orientacao.fases;
+        }
         res.status (200).json ({ item });
     } catch (error) {
         console.log (error);
@@ -193,55 +211,67 @@ async function historico (req, res) {
 }
 
 function atividadeMaisRecente (orientacao, userTipo) {
-    let maisRecente = null;
-    if (userTipo === 'aluno' && orientacao.situacao === 'confirmado' && orientacao.confirmadoEm) {
-        maisRecente = { tipo: 'confirmacao', texto: '', fase: '', data: new Date (orientacao.confirmadoEm) };
+    const candidatos = [];
+    const considerar = (data, detalhe) => {
+        if (data) candidatos.push ({ ...detalhe, data: new Date (data) });
+    };
+    if (userTipo === 'aluno' && orientacao.situacao === 'confirmado') {
+        considerar (orientacao.confirmadoEm, { tipo: 'confirmacao', texto: '', fase: '' });
     }
     for (const fase of orientacao.fases || []) {
         if (userTipo === 'professor') {
             for (const arquivo of fase.arquivos || []) {
-                const data = new Date (arquivo.dataEnvio);
-                if (!maisRecente || data > maisRecente.data) {
-                    maisRecente = { tipo: 'arquivo', texto: arquivo.originalname, fase: fase.nome, data };
-                }
-            }
-            if (fase.descricaoAlteradaEm) {
-                const data = new Date (fase.descricaoAlteradaEm);
-                if (!maisRecente || data > maisRecente.data) {
-                    maisRecente = { tipo: 'descricao', texto: fase.descricao, fase: fase.nome, data };
-                }
+                considerar (arquivo.dataEnvio, { tipo: 'arquivo', texto: arquivo.originalname, fase: fase.nome });
             }
         }
-        if (userTipo === 'aluno' && fase.prazoAlteradoEm) {
-            const data = new Date (fase.prazoAlteradoEm);
-            if (!maisRecente || data > maisRecente.data) {
-                maisRecente = { tipo: 'prazo', texto: fase.prazo, fase: fase.nome, data };
-            }
+        if (userTipo === 'aluno') {
+            considerar (fase.prazoAlteradoEm, { tipo: 'prazo', texto: fase.prazo, fase: fase.nome });
+            considerar (fase.aprovadaEm, { tipo: 'aprovacao', texto: fase.nome, fase: fase.nome });
         }
-        if (userTipo === 'aluno' && fase.aprovadaEm) {
-            const data = new Date (fase.aprovadaEm);
-            if (!maisRecente || data > maisRecente.data) {
-                maisRecente = { tipo: 'aprovacao', texto: fase.nome, fase: fase.nome, data };
+        for (const atividade of fase.atividades || []) {
+            if (userTipo === 'aluno') {
+                considerar (atividade.criadaEm, { tipo: 'atividade', texto: atividade.titulo, fase: fase.nome });
+            } else {
+                // Entregas do aluno: arquivos enviados ou resposta em texto.
+                for (const arquivo of atividade.arquivos || []) {
+                    considerar (arquivo.dataEnvio, { tipo: 'atividade-entrega', texto: atividade.titulo, fase: fase.nome });
+                }
+                if (atividade.tipo === 'texto' && atividade.resposta) {
+                    considerar (atividade.concluidaEm, { tipo: 'atividade-entrega', texto: atividade.titulo, fase: fase.nome });
+                }
             }
         }
         for (const comentario of fase.comentarios || []) {
             if (comentario.autor === userTipo) continue;
-            const data = new Date (comentario.data);
-            if (!maisRecente || data > maisRecente.data) {
-                maisRecente = { tipo: 'comentario', texto: comentario.texto, fase: fase.nome, data };
-            }
+            considerar (comentario.data, { tipo: 'comentario', texto: comentario.texto, fase: fase.nome });
         }
     }
-    if (orientacao.cancelamento?.solicitadoPor === userTipo && orientacao.cancelamento?.resposta?.data) {
-        const data = new Date (orientacao.cancelamento.resposta.data);
-        if (!maisRecente || data > maisRecente.data) {
-            maisRecente = { tipo: 'cancelamento-resposta', texto: orientacao.cancelamento.resposta, fase: '', data };
-        }
+    if (orientacao.cancelamento?.solicitadoPor === userTipo) {
+        considerar (orientacao.cancelamento?.resposta?.data, { tipo: 'cancelamento-resposta', texto: orientacao.cancelamento.resposta, fase: '' });
     }
-    if (!maisRecente) return null;
+    // Ações da outra pessoa guardadas no registro (reunião marcada, atividade removida/reaberta etc.).
+    const outro = userTipo === 'aluno' ? '{professor}' : '{aluno}';
+    for (const evento of orientacao.registro || []) {
+        if (!evento.texto?.startsWith (outro)) continue;
+        const texto = evento.texto.replaceAll ('{professor}', 'O orientador').replaceAll ('{aluno}', 'O aluno');
+        considerar (evento.data, { tipo: 'registro', texto, fase: '' });
+    }
+    // Encerramento feito pela outra pessoa.
+    const auto = orientacao.resposta?.startsWith ('Cancelado automaticamente');
+    const encerrado = (texto) => considerar (orientacao.encerradoEm, { tipo: 'registro', texto, fase: '' });
+    if (userTipo === 'aluno') {
+        if (orientacao.situacao === 'concluido') encerrado ('O orientador concluiu sua orientação. Parabéns! 🎓');
+        if (orientacao.situacao === 'negado') encerrado ('O orientador recusou seu pedido de orientação.');
+        if (orientacao.situacao === 'cancelado' && orientacao.cancelamento?.solicitadoPor === 'professor') encerrado ('O orientador cancelou a orientação.');
+    } else if (orientacao.situacao === 'cancelado' && !orientacao.cancelamento?.data) {
+        encerrado (auto ? 'Pedido cancelado: o aluno foi aceito por outro professor.' : 'O aluno retirou o pedido de orientação.');
+    }
+    if (!candidatos.length) return null;
     const desde = userTipo === 'aluno' ? orientacao.ultimaVisualizacaoAluno : orientacao.ultimaVisualizacaoProfessor;
     const dataDesde = desde ? new Date (desde) : new Date (0);
-    return { detalhe: maisRecente, lida: maisRecente.data <= dataDesde };
+    const maisRecente = candidatos.reduce ((a, b) => (b.data > a.data ? b : a));
+    const naoLidas = candidatos.filter ((c) => c.data > dataDesde).length;
+    return { detalhe: maisRecente, lida: naoLidas === 0, naoLidas };
 }
 
 async function criar (req, res) {
@@ -249,6 +279,8 @@ async function criar (req, res) {
         let orientacao = await Model.findOne (
             { ativo: true, aluno: req.body.aluno, professor: req.body.professor });
         if (orientacao) return res.status (400).json ({ msg: "Pedido de orientação já realizada." });
+        const jaOrientado = await Model.exists ({ ativo: true, aluno: req.body.aluno, situacao: 'confirmado' });
+        if (jaOrientado) return res.status (400).json ({ msg: "Você já possui um orientador. Cada aluno só pode ter um orientador." });
         const novo = new Model ({
             ativo: true,
             aluno: req.body.aluno,
@@ -256,16 +288,10 @@ async function criar (req, res) {
             proposta: req.body.proposta,
         });
         await novo.save ();
-        if (req.body.emailProfessor && req.body.nomeAluno){
-            let err = await sendEmail (
-                req.body.emailProfessor,
-                'SOTCC - Solicitação de orientação',
-                `<h3>O aluno ${req.body.nomeAluno} deseja ser orientado por você, entre para ver mais detalhes.<h3/><a href='${process.env.HOST_ROOT}/ui/login'>Clique aqui para entrar no sistema.</a>`,
-            );
-            if (err == true){
-                return res.status (400).json ({ msg: "Erro ao enviar email de confirmação." });
-            }
-        }
+        notificar (novo._id, 'SOTCC - Solicitação de orientação', (aluno, professor) => ({
+            aluno: `<h3>Você solicitou uma orientação com o professor ${professor}.</h3><p>Aguarde a resposta do professor.</p>`,
+            professor: `<h3>O aluno ${aluno} solicitou uma orientação com você.</h3><p>Entre para ver a proposta e responder.</p>`,
+        }));
         res.json ({ id: novo._id, msg: 'Pedido de orientação enviado.' });
     } catch (error) {
         console.log (error);
@@ -338,7 +364,12 @@ async function alterarSituacao (req, res) {
             }
             orientacao.situacao = req.body.situacao;
             orientacao.resposta = req.body.resposta;
+            if (req.body.situacao === 'negado') {
+                orientacao.encerradoEm = new Date ();
+            }
             if (req.body.situacao === 'confirmado') {
+                const jaOrientado = await Model.exists ({ ativo: true, aluno: orientacao.aluno, situacao: 'confirmado', _id: { $ne: orientacao._id } });
+                if (jaOrientado) return res.status (400).json ({ msg: 'Este aluno já possui um orientador.' });
                 orientacao.confirmadoEm = new Date ();
             }
             msg = 'Resposta enviada.'
@@ -348,15 +379,37 @@ async function alterarSituacao (req, res) {
                 return res.status (400).json ({ msg: 'Para uma orientação confirmada, solicite o cancelamento.' });
             }
             orientacao.ativo = false;
+            orientacao.encerradoEm = new Date ();
             orientacao.situacao = 'cancelado';
             msg = 'Pedido de orientação cancelada.'
         }
         await orientacao.save ();
         if (userTipo === 'professor' && req.body.situacao === 'confirmado') {
-            await Model.updateMany (
-                { ativo: true, aluno: orientacao.aluno, situacao: 'pendente', _id: { $ne: orientacao._id } },
-                { $set: { ativo: false, situacao: 'cancelado', resposta: 'Cancelado automaticamente: você foi aceito por outro professor.' } }
+            const filtro = { ativo: true, aluno: orientacao.aluno, situacao: 'pendente', _id: { $ne: orientacao._id } };
+            const outrosPedidos = await Model.find (filtro, '_id');
+            await Model.updateMany (filtro,
+                { $set: { ativo: false, encerradoEm: new Date (), situacao: 'cancelado', resposta: 'Cancelado automaticamente: você foi aceito por outro professor.' } }
             );
+            for (const pedido of outrosPedidos) {
+                notificar (pedido._id, 'SOTCC - Pedido de orientação cancelado', (aluno, professor) => ({
+                    aluno: `<h3>Seu pedido de orientação com o professor ${professor} foi cancelado automaticamente, pois você já foi aceito por outro professor.</h3>`,
+                    professor: `<h3>O pedido de orientação do aluno ${aluno} foi cancelado automaticamente, pois ele já foi aceito por outro professor.</h3>`,
+                }));
+            }
+        }
+        if (userTipo === 'professor') {
+            const aceita = req.body.situacao === 'confirmado';
+            const resposta = orientacao.resposta ? `<p>Resposta: ${orientacao.resposta}</p>` : '';
+            notificar (orientacao._id, aceita ? 'SOTCC - Orientação aceita' : 'SOTCC - Orientação recusada', (aluno, professor) => ({
+                aluno: `<h3>O professor ${professor} ${aceita ? 'aceitou' : 'recusou'} seu pedido de orientação.</h3>${resposta}`,
+                professor: `<h3>Você ${aceita ? 'aceitou' : 'recusou'} o pedido de orientação do aluno ${aluno}.</h3>${resposta}`,
+            }));
+        }
+        if (userTipo === 'aluno') {
+            notificar (orientacao._id, 'SOTCC - Pedido de orientação retirado', (aluno, professor) => ({
+                aluno: `<h3>Você retirou seu pedido de orientação com o professor ${professor}.</h3>`,
+                professor: `<h3>O aluno ${aluno} retirou o pedido de orientação com você.</h3>`,
+            }));
         }
         return res.status (200).json ({msg: msg});
     } catch (error) {
@@ -388,7 +441,12 @@ async function concluirOrientacao (req, res) {
         }
         orientacao.situacao = 'concluido';
         orientacao.ativo = false;
+        orientacao.encerradoEm = new Date ();
         await orientacao.save ();
+        notificar (orientacao._id, 'SOTCC - Orientação concluída', (aluno, professor) => ({
+            aluno: `<h3>Parabéns! O professor ${professor} concluiu sua orientação.</h3>`,
+            professor: `<h3>Você concluiu a orientação do aluno ${aluno}.</h3>`,
+        }));
         res.status (200).json ({ msg: 'Orientação concluída com sucesso.' });
     } catch (error) {
         console.log (error);
@@ -520,4 +578,4 @@ async function listarPublicas (req, res) {
     }
 }
 
-export { listar, criar, deletar, alterarSituacao, editar, pegarPorId, orientacaoPorProfessor, listarPublicas, concluirOrientacao, historico, marcarNotificacoesVistas };
+export { atividadeMaisRecente, listar, criar, deletar, alterarSituacao, editar, pegarPorId, orientacaoPorProfessor, listarPublicas, concluirOrientacao, historico, marcarNotificacoesVistas };

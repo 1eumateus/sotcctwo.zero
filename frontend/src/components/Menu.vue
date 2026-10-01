@@ -49,7 +49,7 @@
                             </div>
                             <router-link
                                 v-for="item in orientacoesComNotificacao"
-                                :key="item._id"
+                                :key="`${item._id}-${item.solicitacaoPendente ? 's' : item.cancelamentoPendente ? 'c' : item.cancelamentoAguardando ? 'a' : 'n'}`"
                                 :to="item.solicitacaoPendente ? '/ui/' : `/ui/acompanhamento/${item._id}`"
                                 class="cursor-pointer flex items-center gap-[10px] px-[14px] py-[10px] w-full transition-colors border-l-[3px]"
                                 :class="ehNaoLida(item) ? 'bg-terciaria/10 border-terciaria hover:bg-terciaria/20' : 'border-transparent hover:bg-principal-opaco'"
@@ -98,6 +98,9 @@
                                         </template>
                                         <template v-else>
                                             {{ resumoNotificacao(item.notificacaoDetalhe) }}
+                                            <span v-if="!item.notificacaoLida && item.naoLidas > 1" class="ml-[4px] text-[10px] font-bold px-[6px] py-[1px] rounded-full bg-terciaria text-white">
+                                                +{{ item.naoLidas - 1 }}
+                                            </span>
                                         </template>
                                     </Texto>
                                     <span class="cursor-pointer text-[10px] font-bold uppercase" :class="ehNaoLida(item) ? 'text-terciaria' : 'text-gray-400'">
@@ -164,7 +167,12 @@ const route = useRoute();
 const urlApi = import.meta.env.VITE_URL;
 
 const orientacoesComNotificacao = reactive([]);
-const naoLidasCount = computed(() => orientacoesComNotificacao.filter(ehNaoLida).length);
+// Cada novidade conta; pedidos que exigem resposta contam 1 até serem respondidos.
+const naoLidasCount = computed(() => orientacoesComNotificacao.reduce((total, item) => {
+    if (item.solicitacaoPendente || item.cancelamentoPendente) return total + 1;
+    if (item.cancelamentoAguardando) return total;
+    return total + (item.notificacaoLida ? 0 : (item.naoLidas || 1));
+}, 0));
 
 function nomeCompleto(pessoa) {
     return `${pessoa?.nome || ''} ${pessoa?.sobrenome || ''}`.trim();
@@ -180,14 +188,20 @@ function resumoNotificacao(detalhe) {
             ? `Novo prazo em "${detalhe.fase}": ${formatMask.viewDate(detalhe.texto)}`
             : `O prazo de "${detalhe.fase}" foi removido.`;
     }
-    if (detalhe.tipo === 'descricao') {
-        return `Descrição atualizada em "${detalhe.fase}".`;
-    }
     if (detalhe.tipo === 'aprovacao') {
         return `O orientador aprovou a fase "${detalhe.fase}".`;
     }
     if (detalhe.tipo === 'confirmacao') {
         return 'O orientador aceitou sua solicitação de orientação! 🎉';
+    }
+    if (detalhe.tipo === 'atividade') {
+        return `Nova atividade em "${detalhe.fase}": ${detalhe.texto}`;
+    }
+    if (detalhe.tipo === 'atividade-entrega') {
+        return `O aluno entregou a atividade "${detalhe.texto}".`;
+    }
+    if (detalhe.tipo === 'registro') {
+        return detalhe.texto;
     }
     if (detalhe.tipo === 'cancelamento-resposta') {
         return detalhe.texto.aceito
@@ -236,10 +250,10 @@ function tempoRelativo(data) {
 
 async function buscarNotificacoes() {
     if (props.user.tipo === 'admin') return;
-    await api.get('/orientacao/')
+    await api.get('/orientacao/?notificacoes=1')
         .then((res) => {
             const itens = res.data?.item || [];
-            const comAtividade = itens.filter((item) => item.situacao === 'confirmado' && item.notificacaoDetalhe);
+            const comAtividade = itens.filter((item) => item.notificacaoDetalhe);
             const pendentes = props.user.tipo === 'professor'
                 ? itens.filter((item) => item.situacao === 'pendente').map((item) => ({ ...item, solicitacaoPendente: true }))
                 : [];
@@ -265,6 +279,7 @@ async function marcarTodasNotificacoesVistas() {
 function marcarItemComoLido(item) {
     if (item.solicitacaoPendente || item.cancelamentoPendente) return;
     item.notificacaoLida = true;
+    item.naoLidas = 0;
 }
 
 watch(() => route.fullPath, buscarNotificacoes);

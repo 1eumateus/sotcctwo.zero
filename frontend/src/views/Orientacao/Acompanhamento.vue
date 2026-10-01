@@ -59,7 +59,7 @@
               {{ orientacao.reuniao?.agendadaPara && !orientacao.reuniao?.ativa ? 'Alterar agendamento' : 'Agendar' }}
             </button>
             <button
-              v-if="!somenteLeitura && !cancelamentoAtivo && (ehProfessor || podeSolicitarCancelamento)"
+              v-if="!somenteLeitura && (ehProfessor || (!cancelamentoAtivo && podeSolicitarCancelamento))"
               type="button"
               class="cursor-pointer flex items-center gap-[4px] px-[10px] py-[6px] border border-red-300 text-red-600 hover:bg-red-50 rounded-md font-bold text-[13px]"
               @click="openNegarOrientacao = true"
@@ -127,6 +127,9 @@
               <Texto as="body">
                 {{ orientacao.cancelamento.motivo }}
               </Texto>
+              <Texto as="small" color="gray">
+                Atividades e prazos estão suspensos até a resposta. Se a orientação continuar, os prazos em aberto serão adiados pelos dias de suspensão.
+              </Texto>
             </div>
             <div class="flex gap-[8px]" v-if="!cancelamentoSolicitadoPorMim && !recusandoCancelamento">
               <button
@@ -191,10 +194,9 @@
         >
           <div class="flex items-center justify-between gap-[8px]">
             <div class="flex items-center gap-[8px]">
-              <PhCheckCircle v-if="orientacao.cancelamento.resposta.aceito" :size="20" class="fill-orange-500 flex-shrink-0" />
-              <PhX v-else :size="20" class="fill-orange-500 flex-shrink-0" />
+              <PhX :size="20" class="fill-orange-500 flex-shrink-0" />
               <Texto as="body-bold" color="orange">
-                {{ orientacao.cancelamento.resposta.aceito ? 'Cancelamento aceito' : 'Cancelamento recusado' }}
+                Cancelamento recusado
               </Texto>
             </div>
             <div class="flex items-center gap-[4px] flex-shrink-0">
@@ -204,7 +206,7 @@
               </Texto>
             </div>
           </div>
-          <Texto as="body" v-if="!orientacao.cancelamento.resposta.aceito">
+          <Texto as="body">
             Motivo: {{ orientacao.cancelamento.resposta.motivo }}
           </Texto>
         </div>
@@ -274,6 +276,7 @@
               <button
                 type="button"
                 :disabled="faseStatus(index) === 'locked'"
+                :title="faseStatus(index) === 'locked' ? 'Liberada quando a fase anterior for aprovada' : ''"
                 class="flex flex-col items-center gap-[4px] flex-shrink-0 w-[92px] md:w-[120px] group"
                 @click="abaSelecionada = index"
               >
@@ -363,7 +366,7 @@
                   Sem prazo definido
                 </Texto>
                 <button
-                  v-if="ehProfessor && !acoesSuspensas"
+                  v-if="ehProfessor && !acoesSuspensas && faseSelecionada.situacao !== 'aprovada'"
                   type="button"
                   class="cursor-pointer text-[12px] font-bold text-principal hover:underline"
                   @click="iniciarEdicaoPrazo"
@@ -375,15 +378,16 @@
 
             <div v-if="souFaseTema" class="flex flex-col gap-[6px] border-t border-secundaria-opaco pt-[10px]">
               <Texto as="body-bold" color="principal">Tema do TCC</Texto>
-              <template v-if="!ehProfessor && !acoesSuspensas && faseSelecionada.situacao !== 'aprovada' && editandoDescricao">
+              <template v-if="podeEditarTema && (!temaAtual || editandoTema)">
                 <textarea
                   v-model="descricaoProposta"
                   rows="3"
-                  placeholder="Digite o tema final do TCC, que será usado no cartaz de divulgação."
-                  class="w-full border border-principal focus:outline-principal p-[8px] rounded-md text-sm"
+                  placeholder="Ex.: Sistema web para acompanhamento de orientações de TCC. Esse tema será usado no cartaz de divulgação da defesa."
+                  class="w-full border border-secundaria-opaco hover:border-principal focus:border-principal focus:outline-principal p-[8px] rounded-md text-sm transition-colors"
                 ></textarea>
-                <div class="flex items-center gap-[10px]">
+                <div v-if="temaAlterado || temaAtual" class="flex items-center gap-[10px]">
                   <button
+                    v-if="temaAlterado && descricaoProposta.trim()"
                     type="button"
                     class="cursor-pointer self-start flex items-center gap-[6px] bg-principal hover:bg-principal-opaco text-white px-[14px] py-[8px] rounded-md font-bold text-[14px]"
                     @click="salvarDescricaoProposta"
@@ -392,42 +396,43 @@
                     Salvar tema
                   </button>
                   <button
+                    v-if="temaAtual"
                     type="button"
                     class="cursor-pointer text-[12px] font-bold text-gray-500 hover:underline"
-                    @click="editandoDescricao = false"
+                    @click="cancelarEdicaoTema"
                   >
                     Cancelar
                   </button>
                 </div>
               </template>
-              <template v-else>
-                <div class="w-full border border-secundaria-opaco rounded-md p-[8px]">
-                  <Texto as="body" v-if="temaAtual">
-                    <template v-for="(parte, i) in linkify(temaAtual)" :key="i">
-                      <a v-if="parte.link" :href="parte.link" target="_blank" rel="noopener noreferrer" class="underline text-principal hover:text-principal-opaco break-all">{{ parte.texto }}</a>
-                      <template v-else>{{ parte.texto }}</template>
-                    </template>
-                  </Texto>
-                  <Texto as="label" color="gray" v-else>
-                    O aluno ainda não definiu o tema.
-                  </Texto>
-                </div>
+              <div v-else class="w-full flex items-start justify-between gap-[8px] border border-secundaria-opaco rounded-md p-[8px]">
+                <Texto as="body" v-if="temaAtual">
+                  <template v-for="(parte, i) in linkify(temaAtual)" :key="i">
+                    <a v-if="parte.link" :href="parte.link" target="_blank" rel="noopener noreferrer" class="underline text-principal hover:text-principal-opaco break-all">{{ parte.texto }}</a>
+                    <template v-else>{{ parte.texto }}</template>
+                  </template>
+                </Texto>
+                <Texto as="label" color="gray" v-else>
+                  {{ ehProfessor ? 'O aluno ainda não definiu o tema.' : 'Tema não definido.' }}
+                </Texto>
                 <button
-                  v-if="!ehProfessor && !acoesSuspensas && faseSelecionada.situacao !== 'aprovada'"
+                  v-if="podeEditarTema && temaAtual"
                   type="button"
-                  class="cursor-pointer self-start text-[12px] font-bold text-principal hover:underline"
-                  @click="iniciarEdicaoDescricao"
+                  title="Editar tema"
+                  class="cursor-pointer flex items-center gap-[4px] text-[12px] font-bold text-principal hover:underline flex-shrink-0"
+                  @click="editandoTema = true"
                 >
+                  <PhPencilSimple :size="14" />
                   Editar
                 </button>
-              </template>
+              </div>
             </div>
 
-            <div v-else-if="abaSelecionada === 0" class="flex flex-col gap-[8px] border-t border-secundaria-opaco pt-[10px]">
+            <div class="flex flex-col gap-[8px] border-t border-secundaria-opaco pt-[10px]">
               <div class="flex items-center justify-between flex-wrap gap-[8px]">
                 <Texto as="body-bold" color="principal">Atividades</Texto>
                 <button
-                  v-if="ehProfessor && !acoesSuspensas"
+                  v-if="ehProfessor && !acoesSuspensas && faseSelecionada.situacao !== 'aprovada'"
                   type="button"
                   class="cursor-pointer flex items-center gap-[4px] text-[12px] font-bold text-principal hover:underline"
                   @click="iniciarCriacaoAtividade"
@@ -510,9 +515,9 @@
                       v-if="ehProfessor"
                       type="checkbox"
                       :checked="atividade.concluida"
-                      :disabled="acoesSuspensas"
+                      :disabled="acoesSuspensas || faseSelecionada.situacao === 'aprovada'"
                       @change="alternarConclusaoAtividade(atividade, $event.target.checked)"
-                      class="cursor-pointer w-[16px] h-[16px] accent-principal flex-shrink-0"
+                      class="cursor-pointer disabled:cursor-not-allowed disabled:opacity-60 w-[16px] h-[16px] accent-principal flex-shrink-0"
                     />
                     <div class="flex flex-col min-w-0">
                       <Texto as="body" :color="atividade.concluida ? 'gray' : ''" :class="atividade.concluida ? 'line-through' : ''">
@@ -523,7 +528,7 @@
                           {{ atividade.tipo === 'arquivo' ? 'Arquivo' : 'Texto' }}
                         </span>
                         <span v-if="atividade.concluida" class="text-[10px] font-bold uppercase px-[6px] py-[1px] rounded-full bg-green-100 text-green-700">
-                          Concluída
+                          {{ ehProfessor ? 'Concluída' : 'Entregue' }}
                         </span>
                       </div>
                     </div>
@@ -537,7 +542,7 @@
                         {{ prazoAtividade(atividade).texto }}
                       </span>
                     </div>
-                    <div v-if="ehProfessor && !acoesSuspensas" class="flex items-center gap-[8px]">
+                    <div v-if="ehProfessor && !acoesSuspensas && faseSelecionada.situacao !== 'aprovada'" class="flex items-center gap-[8px]">
                       <button
                         type="button"
                         title="Editar atividade"
@@ -559,7 +564,7 @@
                 </div>
 
                 <template v-if="atividade.tipo === 'texto'">
-                  <template v-if="!ehProfessor && !acoesSuspensas && faseSelecionada.situacao !== 'aprovada'">
+                  <template v-if="!ehProfessor && !acoesSuspensas && faseSelecionada.situacao !== 'aprovada' && !atividade.concluida">
                     <textarea
                       v-model="atividadeRespostas[atividade._id]"
                       rows="2"
@@ -597,7 +602,7 @@
                         <span class="truncate">{{ arquivo.originalname }}</span>
                       </button>
                       <button
-                        v-if="!ehProfessor && !acoesSuspensas && faseSelecionada.situacao !== 'aprovada' && idx === atividade.arquivos.length - 1"
+                        v-if="!ehProfessor && !acoesSuspensas && faseSelecionada.situacao !== 'aprovada' && !atividade.concluida && idx === atividade.arquivos.length - 1"
                         type="button"
                         title="Remover arquivo"
                         class="cursor-pointer text-gray-400 hover:text-red-600"
@@ -610,7 +615,7 @@
                   <Texto as="label" color="gray" v-else-if="ehProfessor">
                     O aluno ainda não enviou arquivo.
                   </Texto>
-                  <div v-if="!ehProfessor && !acoesSuspensas && faseSelecionada.situacao !== 'aprovada'">
+                  <div v-if="!ehProfessor && !acoesSuspensas && faseSelecionada.situacao !== 'aprovada' && !atividade.concluida">
                     <label
                       :for="`arquivoAtividade-${atividade._id}`"
                       class="cursor-pointer inline-flex items-center gap-1 text-[12px] font-bold text-principal hover:underline"
@@ -889,6 +894,7 @@ import GerarCartaz from './GerarCartaz.vue';
 import Videochamada from './Videochamada.vue';
 import api from "@/api.js";
 import { popupInfo, formatMask, notificarNavegador } from '../../stores/util.js';
+import { infoPrazo, prazoVencido, estadoOrientacao } from '../../stores/prazo.js';
 import { useLoaderState } from "../../stores/isLoading.js";
 
 const props = defineProps({
@@ -931,7 +937,8 @@ let tickSegundoInterval = null;
 
 const mostrarRespostaCancelamento = computed(() => {
   const resposta = orientacao.cancelamento?.resposta;
-  if (!resposta?.data) return false;
+  // Só o recusado vira aviso; aceito encerra a orientação e não precisa de caixa.
+  if (!resposta?.data || resposta.aceito) return false;
   return agora.value - new Date(resposta.data).getTime() < 24 * 60 * 60 * 1000;
 });
 
@@ -980,7 +987,15 @@ const temaAtual = computed(() => orientacao.fases?.[indiceFaseTema.value]?.descr
 const prazoEditando = ref('');
 const editandoPrazo = ref(false);
 const descricaoProposta = ref('');
-const editandoDescricao = ref(false);
+// Aluno edita o tema direto na caixa; o botão de salvar só aparece se mudou.
+const podeEditarTema = computed(() => !ehProfessor.value && !acoesSuspensas.value && orientacao.fases?.[indiceFaseTema.value]?.situacao !== 'aprovada');
+const temaAlterado = computed(() => descricaoProposta.value.trim() !== temaAtual.value.trim());
+const editandoTema = ref(false);
+function cancelarEdicaoTema() {
+  descricaoProposta.value = temaAtual.value;
+  editandoTema.value = false;
+}
+watch(temaAtual, (tema) => { descricaoProposta.value = tema; }, { immediate: true });
 const criandoAtividade = ref(false);
 const novaAtividadeTitulo = ref('');
 const novaAtividadePrazo = ref('');
@@ -994,8 +1009,8 @@ watch(abaSelecionada, () => {
   const fase = faseSelecionada.value;
   prazoEditando.value = fase?.prazo ? formatMask.date(fase.prazo) : '';
   descricaoProposta.value = temaAtual.value;
+  editandoTema.value = false;
   editandoPrazo.value = false;
-  editandoDescricao.value = false;
   criandoAtividade.value = false;
   atividadeEditando.value = null;
   nextTick(() => redimensionarComentario());
@@ -1068,8 +1083,7 @@ function noFaseClass(index) {
 
 function faseAtrasada(index) {
   const fase = orientacao.fases?.[index];
-  if (!fase?.prazo || fase.situacao === 'aprovada') return false;
-  return new Date(fase.prazo) < new Date();
+  return prazoVencido(fase?.prazo, { resolvido: fase?.situacao === 'aprovada', estado: estadoPrazos.value, agora: agoraSegundo.value });
 }
 
 const dataDesdeSnapshot = ref(null);
@@ -1086,6 +1100,11 @@ function faseComNovidade() {
     }
     for (const comentario of fase.comentarios || []) {
       if (comentario.autor !== meuAutor && new Date(comentario.data) > dataDesde) return i;
+    }
+    for (const atividade of fase.atividades || []) {
+      if (!ehProfessor.value && new Date(atividade.criadaEm) > dataDesde) return i;
+      if (ehProfessor.value && (atividade.arquivos || []).some((a) => new Date(a.dataEnvio) > dataDesde)) return i;
+      if (ehProfessor.value && atividade.resposta && atividade.concluidaEm && new Date(atividade.concluidaEm) > dataDesde) return i;
     }
   }
   return null;
@@ -1128,7 +1147,7 @@ async function start() {
       orientacao.dataDefesa = formatMask.date(orientacao.dataDefesa);
       if (!orientacao.coorientador) orientacao.coorientador = { nome: '', instituicao: '' };
       if (!orientacao.banca) orientacao.banca = [];
-      (orientacao.fases?.[0]?.atividades || []).forEach((atividade) => {
+      (orientacao.fases || []).flatMap((fase) => fase.atividades || []).forEach((atividade) => {
         if (atividade.tipo === 'texto' && atividadeRespostas[atividade._id] === undefined) {
           atividadeRespostas[atividade._id] = atividade.resposta || '';
         }
@@ -1137,7 +1156,8 @@ async function start() {
         const desde = ehProfessor.value ? orientacao.ultimaVisualizacaoProfessor : orientacao.ultimaVisualizacaoAluno;
         dataDesdeSnapshot.value = desde ? new Date(desde) : new Date(0);
         const novidade = faseComNovidade();
-        abaSelecionada.value = novidade ?? Math.min(faseAtualIndex.value, orientacao.fases.length - 1);
+        const faseAberta = novidade !== null && faseStatus(novidade) !== 'locked' ? novidade : null;
+        abaSelecionada.value = faseAberta ?? Math.min(faseAtualIndex.value, orientacao.fases.length - 1);
         primeiraCarga = false;
       }
       await api.put(`/orientacao/${orientacao._id}/visualizar`)
@@ -1197,27 +1217,11 @@ async function removerArquivoAtividade(atividade, arquivoId) {
     .finally(() => isLoading.changeStateFalse());
 }
 
+// O tempo só corre com a orientação ativa: congela com pedido de cancelamento e ao encerrar.
+const estadoPrazos = computed(() => estadoOrientacao(orientacao));
+
 function prazoInfo(prazoValor, resolvido) {
-  if (!prazoValor) return null;
-  const prazoData = new Date(prazoValor);
-  const data = formatMask.viewDate(prazoValor);
-  if (resolvido) return { texto: data, classe: 'bg-secundaria text-gray-600' };
-  const fimDoDia = Date.UTC(prazoData.getUTCFullYear(), prazoData.getUTCMonth(), prazoData.getUTCDate(), 23, 59, 59, 999);
-  const restanteMs = fimDoDia - agora.value;
-  if (restanteMs <= 0) return { texto: data, classe: 'bg-red-600 text-white' };
-  if (restanteMs <= 24 * 60 * 60 * 1000) {
-    const restanteSeg = Math.max(0, Math.floor((fimDoDia - agoraSegundo.value) / 1000));
-    const h = String(Math.floor(restanteSeg / 3600)).padStart(2, '0');
-    const m = String(Math.floor((restanteSeg % 3600) / 60)).padStart(2, '0');
-    const s = String(restanteSeg % 60).padStart(2, '0');
-    return { texto: `${h}:${m}:${s}`, classe: 'bg-red-100 text-red-700', contagem: true };
-  }
-  const hojeUTC = Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate());
-  const prazoUTC = Date.UTC(prazoData.getUTCFullYear(), prazoData.getUTCMonth(), prazoData.getUTCDate());
-  const diasRestantes = Math.round((prazoUTC - hojeUTC) / (24 * 60 * 60 * 1000));
-  const texto = `Restam ${diasRestantes} dia${diasRestantes === 1 ? '' : 's'} (${data})`;
-  if (restanteMs <= 3 * 24 * 60 * 60 * 1000) return { texto, classe: 'bg-orange-100 text-orange-700' };
-  return { texto, classe: 'bg-secundaria text-gray-600' };
+  return infoPrazo(prazoValor, { resolvido, estado: estadoPrazos.value, agora: agoraSegundo.value });
 }
 
 function prazoAtividade(atividade) {
@@ -1317,11 +1321,6 @@ async function removerComentario(faseIndex, comentarioId) {
     .finally(() => isLoading.changeStateFalse());
 }
 
-function iniciarEdicaoDescricao() {
-  descricaoProposta.value = temaAtual.value;
-  editandoDescricao.value = true;
-}
-
 async function salvarDescricaoProposta() {
   isLoading.changeStateTrue();
   await api.put(`/orientacao/${orientacao._id}/fases/${indiceFaseTema.value}/descricao`, {
@@ -1329,10 +1328,10 @@ async function salvarDescricaoProposta() {
   })
     .then(async (res) => {
       popupInfo().success(res.data?.msg);
-      editandoDescricao.value = false;
+      editandoTema.value = false;
       await start();
     })
-    .catch((e) => popupInfo().warning(e.response?.data?.msg || 'Erro ao salvar descrição.'))
+    .catch((e) => popupInfo().warning(e.response?.data?.msg || 'Erro ao salvar o tema.'))
     .finally(() => isLoading.changeStateFalse());
 }
 
@@ -1547,7 +1546,7 @@ function notificarNovoPrazo(fase, prazoAntigo, prazoNovo) {
 
 function notificarNovaDescricao(fase, descricaoAntiga, descricaoNova) {
   if (!descricaoNova?.trim() || descricaoAntiga === descricaoNova) return;
-  notificarNavegador('SOTCC - Proposta atualizada', `O aluno atualizou a descrição da proposta na fase "${fase.nome}".`);
+  notificarNavegador('SOTCC - Tema do TCC', `O aluno ${descricaoAntiga?.trim() ? 'alterou' : 'definiu'} o tema do TCC: "${descricaoNova.trim()}"`);
 }
 
 function notificarNovoComentario(fase, comentario) {

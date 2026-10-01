@@ -47,7 +47,7 @@
                     </div>
                     <div class="flex justify-end" v-if="props?.usuario.tipo === 'aluno'">
                         <button 
-                            v-if="form.disponibilidade !== 'indisponível' && !solicitacaoEnviada"
+                            v-if="form.disponibilidade !== 'indisponível' && !solicitacaoEnviada && !jaOrientado"
                             @click="()=> openSolicitarOrientacao = true" 
                             class=" font-bold text-[14px] bg-green-300 hover:bg-green-400 py-[8px] px-[12px] rounded-md cursor-pointer">
                             Solicitar orientação
@@ -56,6 +56,13 @@
                             v-if="solicitacaoEnviada"
                             class=" font-bold text-[14px] bg-orange-400 py-[8px] px-[12px] rounded-md cursor-not-allowed">
                             {{ estadoOrientacao==='confirmado' ? 'Em orientação' : 'Orientação solicitada' }}
+                        </button>
+                        <button
+                            v-if="jaOrientado && !solicitacaoEnviada"
+                            disabled
+                            title="Cada aluno só pode ter um orientador."
+                            class=" font-bold text-[14px] bg-gray-300 text-gray-600 py-[8px] px-[12px] rounded-md cursor-not-allowed">
+                            Você já tem orientador
                         </button>
                    </div>
                     
@@ -158,6 +165,7 @@ import SolicitarOrientacao from '../Orientacao/SolicitarOrientacao.vue';
 const openSolicitarOrientacao = ref(false);
 const orientacoes = reactive([]);
 const solicitacaoEnviada = ref(false);
+const jaOrientado = ref(false);
 const urlApi = import.meta.env.VITE_URL;
 const estadoOrientacao = ref('');
 const totalOrientacao = ref(0);
@@ -221,6 +229,7 @@ async function listarOrientacao(){
     })
 
     solicitacaoEnviada.value = false;
+    jaOrientado.value = orientacoes.some((o) => o.situacao === 'confirmado');
     for(let i=0;i<orientacoes?.length;i++){
         const professor = orientacoes[i]?.professor
         if(professor?._id === form?._id){

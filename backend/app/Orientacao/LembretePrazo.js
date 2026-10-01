@@ -1,6 +1,6 @@
 import cron from "node-cron";
 import Model from "./Model.js";
-import { sendEmail } from '../shared/Mailer.js';
+import { notificar } from './Notificar.js';
 
 const DIAS_ANTECEDENCIA = 3;
 
@@ -16,19 +16,19 @@ function formatarData (value) {
 async function verificarPrazos () {
     const agora = new Date ();
     const limite = new Date (agora.getTime () + DIAS_ANTECEDENCIA * 24 * 60 * 60 * 1000);
-    const orientacoes = await Model.find ({ ativo: true }).populate ('aluno', 'email');
+    const orientacoes = await Model.find ({ ativo: true });
     for (const orientacao of orientacoes) {
+        // Prazos suspensos enquanto há pedido de cancelamento em aberto.
+        if (orientacao.cancelamento?.solicitadoPor && !orientacao.cancelamento?.resposta?.data) continue;
         let mudou = false;
         for (const fase of orientacao.fases) {
             if (fase.situacao === 'aprovada') continue;
             if (!fase.prazo || fase.lembretePrazoEnviado) continue;
             if (fase.prazo < agora || fase.prazo > limite) continue;
-            if (!orientacao.aluno?.email) continue;
-            sendEmail (
-                orientacao.aluno.email,
-                'SOTCC - Prazo se aproximando',
-                `<h3>O prazo da fase "${fase.nome}" está chegando: ${formatarData (fase.prazo)}.</h3><a href='${process.env.HOST_ROOT}/ui/login'>Clique aqui para entrar no sistema.</a>`,
-            );
+            notificar (orientacao._id, 'SOTCC - Prazo se aproximando', (aluno, professor) => ({
+                aluno: `<h3>O prazo da fase "${fase.nome}" da sua orientação com o professor ${professor} termina em ${formatarData (fase.prazo)}.</h3>`,
+                professor: `<h3>O prazo da fase "${fase.nome}" do aluno ${aluno} termina em ${formatarData (fase.prazo)}.</h3>`,
+            }));
             fase.lembretePrazoEnviado = true;
             mudou = true;
         }
